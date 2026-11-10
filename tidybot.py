@@ -47,6 +47,7 @@ except Exception:  # lets the drawing code be imported for previews
     HAVE_GTK = False
 
 APP = "tidybot"
+TRACE = bool(os.environ.get("TIDYBOT_TRACE"))
 HOME = os.path.expanduser("~")
 CONFIG_PATH = os.path.join(HOME, ".config", APP, "settings.json")
 DATA_DIR = os.path.join(HOME, ".local", "share", APP)
@@ -80,7 +81,7 @@ DEFAULT_CONFIG = {
     "skin": "classic",        # see the right-click menu for all 10
     "side": "right",          # "right" or "left": which edge to line icons up on
     "settle_seconds": 0.6,    # wait until icons stop changing this long
-    "new_file_grace": 5,      # leave a just-created file alone this long
+    "file_grace": 2.5,        # leave a just-saved file alone this long (folders: 1 s)
     "scan_interval": 0.4,     # how often it glances at the desktop
     "scale": 1.0,             # robot size
     "speed": 520,             # flight speed, px/s
@@ -104,6 +105,15 @@ def load_config():
         with open(CONFIG_PATH, "w") as f:
             json.dump(cfg, f, indent=2)
     return cfg
+
+
+# files still being written: never touch them
+PARTIAL_SUFFIXES = (".crdownload", ".part", ".partial", ".download", ".tmp",
+                    ".swp", "~", ".!qb", ".opdownload")
+# names the desktop gives brand-new items: the user is probably typing a name
+DEFAULT_NAME = re.compile(
+    r"^(new folder|untitled folder|new document|untitled document|empty document"
+    r"|مجلد جديد|مستند جديد)( ?\(?\d+\)?)?(\.\w+)?$", re.IGNORECASE)
 
 
 def save_settings(**changes):
@@ -355,7 +365,8 @@ class Desk:
         except OSError:
             names = []
         for n in names:
-            if n.startswith(".") or n in self.cfg["ignore"]:
+            if (n.startswith(".") or n in self.cfg["ignore"]
+                    or n.lower().endswith(PARTIAL_SUFFIXES)):
                 continue
             p = os.path.join(self.desktop, n)
             out.append({"path": p, "name": n,
@@ -393,17 +404,29 @@ class Desk:
     def snapshot(self):
         return tuple(sorted((i["name"], i["pos"]) for i in self.items()))
 
-    def is_fresh(self, it, now):
-        """A file that just arrived (download, new save) gets a moment's peace.
-        Files the robot itself just moved don't count as new."""
+    def wait_left(self, it, now):
+        """Seconds to leave a just-arrived item alone (0 = fine to tidy).
+        A new folder only gets a moment; a file a little longer (it may still
+        be saving); an item with a default name like "New Folder" longer
+        still, because you're probably typing its name. Renaming starts the
+        short wait again. Items the robot itself just moved never wait."""
         if it.get("special"):
-            return False
-        if now - self.ours.get(it["path"], 0) < self.cfg["new_file_grace"] + 5:
-            return False
+            return 0.0
+        if now - self.ours.get(it["path"], 0) < 15:
+            return 0.0
         try:
-            return now - os.lstat(it["path"]).st_ctime < self.cfg["new_file_grace"]
+            age = now - os.lstat(it["path"]).st_ctime
         except OSError:
-            return True
+            return 1.0
+        if DEFAULT_NAME.match(it["name"]):
+            grace = 20.0
+        elif it["dir"]:
+            grace = 1.0
+        else:
+            grace = float(self.cfg["file_grace"])
+        if it["pos"] is None:              # give the desktop a moment to place it
+            grace = max(grace, 1.5)
+        return max(0.0, grace - age)
 
     def plan(self):
         items = self.items()
@@ -436,8 +459,30 @@ class Desk:
                     settled[c] = it["path"]          # already lined up: stays put
         for c in fixed:
             occ[c] = "<special>"
+        # Icons with no saved position were auto-placed by the desktop in the
+        # first free spot from its start corner: predict that spot.
+        corner = "top-left"
+        try:
+            corner = self.ding.get_string("start-corner")
+        except Exception:
+            pass
+        cols = range(grid.cols) if "left" in corner else range(grid.cols - 1, -1, -1)
+        rows = list(range(grid.rows)) if "top" in corner else list(range(grid.rows - 1, -1, -1))
+        guess = {}
+        for it in items:
+            if it["pos"] is None and not it.get("special"):
+                for c in ((cc, rr) for cc in cols for rr in rows):
+                    if c not in occ:
+                        guess[it["path"]] = where[it["path"]] = c
+                        occ[c] = it["path"]
+                        if c in slot_set and c not in settled:
+                            settled[c] = it["path"]
+                        break
         done = set(settled.values())
-        strays = [it for it in items if it["path"] not in done and not self.is_fresh(it, now)]
+        waits = {it["path"]: self.wait_left(it, now) for it in items if it["path"] not in done}
+        strays = [it for it in items if it["path"] in waits and waits[it["path"]] <= 0]
+        pending = [w for w in waits.values() if w > 0]
+        recheck = min(pending) + 0.05 if pending else None
         strays.sort(key=lambda i: (i["pos"] or (1e9, 1e9))[::-1])  # top to bottom
         free = [c for c in slots if c not in settled]
         targets = {p: c for c, p in settled.items()}
@@ -446,7 +491,8 @@ class Desk:
         order = [it for it in strays if it["path"] in targets]
         todo = [it["path"] for it in order]
         return {"grid": grid, "order": order, "targets": targets, "where": where,
-                "occ": occ, "todo": todo, "fixed": fixed, "slots": slot_set}
+                "occ": occ, "todo": todo, "fixed": fixed, "slots": slot_set,
+                "recheck": recheck, "guess": guess}
 
 
 # -------------------------------------------------------------- icon art ---
@@ -825,7 +871,7 @@ class Bot:
         self.skip_until = {}
         self.dragging = False
         self.gave_up_snap = None
-        self.planned_snap, self.planned_at = None, -99.0
+        self.planned_snap, self.plan_due = None, float("inf")
         self.last_scan = -99.0
         self.last_snap, self.snap_since = None, 0.0
         self.task, self.task_name = None, None
@@ -837,6 +883,8 @@ class Bot:
 
     # ----- task plumbing (each behaviour is a generator fed dt per frame)
     def start(self, gen, name):
+        if TRACE:
+            print(f"[trace] {time.time():.2f} {name}", flush=True)
         self.task, self.task_name = gen, name
         try:
             next(gen)
@@ -1009,7 +1057,8 @@ class Bot:
                     break
                 if not os.path.lexists(it["path"]):
                     continue
-                r = yield from self.carry(it["path"], grid, fixed, slots)
+                r = yield from self.carry(it["path"], grid, fixed, slots,
+                                          plan["guess"].get(it["path"]))
                 moved += 1 if r == "moved" else 0
             if self.paused or self.stuck:
                 break
@@ -1057,7 +1106,7 @@ class Bot:
                 return c
         return None
 
-    def carry(self, path, grid, fixed, slots):
+    def carry(self, path, grid, fixed, slots, guess=None):
         """Fetch one icon and put it in the column. Follows the icon if the
         user moves it on the way. Returns 'moved', 'done' or 'fail'."""
         s = self.scale
@@ -1068,7 +1117,7 @@ class Bot:
 
         def cell_now():
             p = get_pos(gf)
-            return grid.cell_at(*p) if p else None
+            return grid.cell_at(*p) if p else guess
 
         def arranged(c):
             return c is not None and c in slots
@@ -1515,11 +1564,13 @@ class Bot:
                 self.last_snap, self.snap_since = snap, self.t
             elif (self.t - self.snap_since >= self.cfg["settle_seconds"]
                   and snap != self.gave_up_snap
-                  and (snap != self.planned_snap or self.t - self.planned_at > 5)):
-                # only re-plan when something changed (or now and then, for
-                # brand-new files whose short grace period has run out)
-                self.planned_snap, self.planned_at = snap, self.t
+                  and (snap != self.planned_snap or self.t >= self.plan_due)):
+                # re-plan when something changed, or the moment a new item's
+                # short wait runs out
+                self.planned_snap, self.plan_due = snap, float("inf")
                 plan = self.desk.plan()
+                if plan and plan["recheck"] is not None:
+                    self.plan_due = self.t + plan["recheck"]
                 if plan:
                     plan["todo"] = [p for p in plan["todo"]
                                     if self.skip_until.get(p, 0) <= self.t]
