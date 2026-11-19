@@ -34,12 +34,12 @@ A personality changes how the robot behaves: how fast it reacts and flies, how i
 |---|---|---|
 | **Normal** | Friendly | Wakes with a "!", carries the icon over and celebrates |
 | **Aggressive** | Angry red brows | Wakes up furious with steam puffs, grabs the icon and **throws** it spinning across the screen into its spot ("GET IN THERE!"), then grumbles |
-| **Funny** | Clown nose, wandering eyes | Wakes with a flip, juggles the icon, does a loop-de-loop on the way, tells silly jokes and dances when done; sings in its sleep |
-| **Lazy** | Heavy, half-closed eyes | Takes a few seconds to react ("Ugh... five more minutes..."), flies slowly, drops the icon from up high ("...close enough.") and flops |
-| **Hyper** | Wide eyes, crackling sparks | Reacts instantly, zips around at double speed, can't keep still, even twitches in its sleep |
-| **Gentleman** | Monocle and mustache | Polite ("Allow me."), carries each icon with care and bows as it places it |
+| **Funny** | Clown nose, wandering eyes | Flips the icon onto its **head and wears it as a hat**, bounces along, and pulls a gag on every trip: puts it in the **wrong spot on purpose** ("...JUST KIDDING!") and fixes it, slips on a banana peel mid-air, or does a loop-de-loop. Tosses it into place and dances; sings in its sleep |
+| **Lazy** | Heavy, half-closed eyes | Ignores the mess for a few seconds ("Ugh... five more minutes..."), sags under the weight, stops halfway to rest and sweat, and often **drops the icon on the way**: it lands on the desktop, he sighs, and goes back for it. Finally drops it in from up high ("...close enough.") |
+| **Hyper** | Wide eyes, crackling sparks | Reacts instantly, zips around with **ghost afterimages**, overshoots and skids back ("SKRRRT!"), and after tidying can't stop: a **victory lap** around the desktop |
+| **Gentleman** | Monocle and mustache | Serves each icon on a **silver tray**, flies perfectly level, **polishes** it with sparkles, bows as he sets it down, then steps back to admire it ("Exquisite.") |
 
-Your choice is saved. Every personality is just as safe with your files: only the animation changes.
+Your choice is saved. Every personality is just as safe with your files: when Lazy drops an icon or Funny puts it in the wrong spot, the file just sits on your desktop for a moment until the robot fetches it again. Lazy and Gentleman take longer per icon, by design.
 
 ## Skins
 

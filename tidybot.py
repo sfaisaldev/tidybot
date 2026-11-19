@@ -860,8 +860,12 @@ PERSONALITIES = {
             "wake": ["A wild file appeared!", "Uh-oh, spaghetti-o!",
                      "Plot twist: a messy desktop!"],
             "grab": ["Boop! Got ya!", "Come here, you!", "This one's coming with me!"],
-            "juggle": ["Look, no hands! ...ok, some hands.", "Juggling skills: activated!",
-                       "Hup! Hup! Hup!"],
+            "juggle": ["Hup! New hat!", "Look, a hat! How do I look?",
+                       "Balancing act, here we go!"],
+            "prank": ["Here? Perfect!", "Right here! Done!", "Ahh, much better here."],
+            "kidding": ["...JUST KIDDING! Hahaha!", "Gotcha! Wrong spot! Hehe!",
+                        "Your face! Ok ok, I'll fix it."],
+            "slip": ["Whoa-oa-oa!", "Banana peel!", "Oopsie-daisy!"],
             "loop": ["Weee! Loop-de-loop!", "This is how I roll!",
                      "Why did the folder cross the desktop? To get to the right side!",
                      "I'm folder than I look!"],
@@ -893,6 +897,9 @@ PERSONALITIES = {
             "fixed_self": ["Oh nice, you did it. Less work for me."],
             "taken": ["Ugh. Fine. Next spot."],
             "toss": ["...close enough.", "Oops. Whatever, it's fine.", "*drops it* Done."],
+            "rest": ["*huff*... *puff*...", "Need... a break...", "Halfway... good enough... for now..."],
+            "oops": ["...oops.", "Whoops. Slippery.", "*drops it* ...ugh."],
+            "sigh": ["Ugh. Fine. I'll get it.", "*sigh* ...fine.", "Why me..."],
             "more": ["There's MORE?!", "Ughhh...", "You're killing me here."],
             "done": ["Done. Never ask me again.", "*collapses*"],
             "back_to_sleep": ["Zzz...", "Finally... sleep...", "Don't wake me... ever..."],
@@ -906,7 +913,7 @@ PERSONALITIES = {
         }),
     "hyper": dict(
         name="Hyper", speed=1.9, react=-0.4, wake="hyper", deliver="carry",
-        face="hyper", idle="twitchy", finale="celebrate", lines={
+        face="hyper", idle="twitchy", finale="lap", lines={
             "hello": ["HI HI HI! I'M HERE! WHAT ARE WE TIDYING?!"],
             "intro": ["HYPER MODE! I HAD SIX COFFEES! LET'S GOOO!"],
             "wake": ["OOH OOH A FILE!!", "MESS DETECTED! GO GO GO!", "I GOT THIS I GOT THIS!"],
@@ -915,6 +922,8 @@ PERSONALITIES = {
             "fixed_self": ["YOU DID IT! HIGH FIVE!"],
             "taken": ["NEXT SPOT! NEXT SPOT!"],
             "toss": ["BOOM! DONE! NEXT!"],
+            "skid": ["SKRRRT!", "WHOA, TOO FAST!", "OOPS, MISSED! BACK BACK!"],
+            "lap": ["VICTORY LAP!!", "WOOOOO!", "ZOOM ZOOM ZOOM!"],
             "more": ["MORE?! YESSS!", "AGAIN AGAIN!", "BRING IT ON!"],
             "done": ["DONE! RECORD TIME! WHAT ELSE?!", "WOOHOO! WHAT'S NEXT?!"],
             "back_to_sleep": ["I'm not tired! ...zzz", "Sleep? Sleep is for... zzz"],
@@ -938,7 +947,9 @@ PERSONALITIES = {
             "fixed_self": ["Ah, splendid. You've handled it yourself."],
             "taken": ["Pardon me, I'll use the next spot."],
             "toss": ["Terribly sorry, I must toss this one."],
-            "placed": ["There you are.", "Exactly where you belong.", "Splendid."],
+            "tray": ["On a silver tray, of course.", "Allow me to serve it properly."],
+            "polish": ["*polish polish*", "Just a little shine...", "One moment, a speck of dust."],
+            "admire": ["Splendid.", "Exquisite.", "Perfectly aligned.", "There you are."],
             "more": ["Another? Very well.", "Right away."],
             "done": ["Everything in order. Will that be all?",
                      "Impeccable, if I may say so."],
@@ -974,11 +985,17 @@ class Floater:
         self.text, self.x, self.y, self.t0, self.dur = text, x, y, t0, dur
 
 
+HEAD_ITEM_Y = -98     # funny: balanced on the head like a hat
+TRAY_PLATE_Y = 102    # gentleman: silver tray held at the waist
+TRAY_ITEM_Y = 74
+
+
 class Item:
     def __init__(self, icon, label):
         self.icon, self.label = icon, label
         self.scale, self.alpha, self.dy, self.rot = 0.5, 0.0, 0.0, 0.0
         self.free, self.sx, self.sy = False, 0.0, 0.0   # free = flying on its own
+        self.perch = "claws"                            # claws / head / tray
 
 
 class Slot:
@@ -1031,6 +1048,8 @@ class Bot:
         self.fails = 0
         self.skip_until = {}
         self.dragging = False
+        self.gagged = set()
+        self.ghosts, self.ghost_acc = [], 0.0
         self.gave_up_snap = None
         self.planned_snap, self.plan_due = None, float("inf")
         self.last_scan = -99.0
@@ -1063,22 +1082,44 @@ class Bot:
             el += (yield)
             fn(min(1.0, el / dur))
 
-    def fly_to(self, tx, ty, speed=None, check=None):
+    def fly_to(self, tx, ty, speed=None, check=None, _inner=False):
         """Fly along a curved path. If `check` is given it is polled every
         0.2 s; when it returns something, the flight stops there and returns
         that value (used to react when the user moves an icon mid-flight)."""
-        speed = (speed or self.cfg.get("speed", 520)) * self.pers["speed"]
+        raw_speed = speed
+        s = self.scale
         ty = max(ty, self.top_limit())               # never aim above the screen
-        wobble = 7 * self.scale if self.pers["face"] == "goofy" else 0.0
         sx, sy = self.x, self.y
         d = math.hypot(tx - sx, ty - sy)
         if d < 2:
             return None
+        fs = self.pers["face"]
+        if fs == "hyper" and not _inner and d > 220:
+            # too fast to stop: shoot past the target, skid, come back
+            ax, ay, aw, ah = self.area
+            ox = clamp(tx + (tx - sx) / d * 85 * s, ax + 60 * s, ax + aw - 60 * s)
+            oy = clamp(ty + (ty - sy) / d * 85 * s, self.top_limit(), ay + ah - 130 * s)
+            r = yield from self.fly_to(ox, oy, raw_speed, check, _inner=True)
+            if r is not None:
+                return r
+            self.squash = 0.72
+            self.burst(self.x, self.y + 60 * s, [(0.85, 0.85, 0.9), (1, 1, 1)], 7, 120)
+            if random.random() < 0.5:
+                self.say(self.line("skid"), 0.9)
+            return (yield from self.fly_to(tx, ty, (raw_speed or self.cfg.get("speed", 520)) * 0.55,
+                                           check, _inner=True))
+        speed = (speed or self.cfg.get("speed", 520)) * self.pers["speed"]
+        carrying = self.item is not None and not self.item.free
+        wobble = 7 * s if fs == "goofy" and not carrying else 0.0
+        bounce = 20 * s if fs == "goofy" and carrying else 0.0
         dur = max(0.4, d / speed)
         lift = min(140, d * 0.3)
+        if self.pers["deliver"] == "drop" and carrying:
+            lift = -min(70, d * 0.22)                # heavy: the path sags
         top = min(self.top_limit(), sy, ty)        # never arc above the screen
-        c1 = (sx + (tx - sx) * 0.25, max(top, sy + (ty - sy) * 0.25 - lift))
-        c2 = (sx + (tx - sx) * 0.75, max(top, sy + (ty - sy) * 0.75 - lift))
+        floor = self.area[1] + self.area[3] - 130 * s
+        c1 = (sx + (tx - sx) * 0.25, min(floor, max(top, sy + (ty - sy) * 0.25 - lift)))
+        c2 = (sx + (tx - sx) * 0.75, min(floor, max(top, sy + (ty - sy) * 0.75 - lift)))
         self.look_target = [clamp((tx - sx) / d * 1.4, -1, 1), clamp((ty - sy) / d, -1, 1) * 0.6]
         el, next_check = 0.0, 0.2
         while el < dur:
@@ -1090,6 +1131,8 @@ class Bot:
                 w = math.sin(el * 11) * wobble * math.sin(math.pi * u)
                 nx += -(ty - sy) / d * w
                 ny += (tx - sx) / d * w
+            if bounce:     # boing-boing hops with a hat on
+                ny -= abs(math.sin(el * 7.5)) * bounce * math.sin(math.pi * u)
             if dt > 0:
                 self.vx, self.vy = (nx - self.x) / dt, (ny - self.y) / dt
             self.x, self.y = nx, ny
@@ -1355,6 +1398,9 @@ class Bot:
         elif style == "bow":
             yield from self.bow(0.8, 0.5)
             yield from self.wait(0.3)
+        elif style == "lap":
+            yield from self.victory_lap()
+            yield from self.celebrate()
 
     def celebrate(self, small=False):
         self.mood = "happy"
@@ -1376,6 +1422,7 @@ class Bot:
         else:
             look_at = (self.x - 200, self.y)
         yield from self.wake_up(look_at)
+        self.gagged = set()
         moved = 0
         for _round in range(6):   # keep going if the user scatters more meanwhile
             grid, fixed, slots = plan["grid"], plan["fixed"], plan["slots"]
@@ -1386,6 +1433,10 @@ class Bot:
                     continue
                 r = yield from self.carry(it["path"], grid, fixed, slots,
                                           plan["guess"].get(it["path"]))
+                for _retry in range(2):      # it got dropped (or pranked): fetch it again
+                    if r != "again" or self.paused or self.stuck:
+                        break
+                    r = yield from self.carry(it["path"], grid, fixed, slots, None)
                 moved += 1 if r == "moved" else 0
             if self.paused or self.stuck:
                 break
@@ -1404,8 +1455,10 @@ class Bot:
             yield from self.wait(0.9)
 
     def top_limit(self):
-        """Highest the robot's centre may go and still be fully on screen."""
-        return self.area[1] + 72 * self.scale
+        """Highest the robot's centre may go and still be fully on screen
+        (lower while it balances an icon on its head)."""
+        hat = self.item is not None and not self.item.free and self.item.perch == "head"
+        return self.area[1] + (128 if hat else 72) * self.scale
 
     def hover_for(self, ix, iy):
         """Where to hover to grab/drop an icon at (ix, iy). Normally right
@@ -1431,6 +1484,204 @@ class Bot:
                 return c
         return None
 
+    def item_y(self):
+        """Where the carried icon is, in the robot's own coordinates."""
+        it = self.item
+        if it is None:
+            return 92
+        return {"head": HEAD_ITEM_Y, "tray": TRAY_ITEM_Y}.get(it.perch, 92) + it.dy
+
+    def toss_to(self, item, tx, ty, height, dur, spin=0.5):
+        """Lob the carried icon in an arc to (tx, ty)."""
+        sx0, sy0 = self.local_to_screen(0, self.item_y())
+        item.free, item.sx, item.sy, item.dy = True, sx0, sy0, 0.0
+        self.claw_target = 1.0
+        h = max(0.0, min(height, min(sy0, ty) - (self.area[1] + 15)))
+
+        def toss(u):
+            e = ease_io(u)
+            item.sx = lerp(sx0, tx, e)
+            item.sy = lerp(sy0, ty, e) - math.sin(math.pi * u) * h
+            item.rot = spin * math.sin(math.pi * u) if abs(spin) < 1 else spin * u
+        yield from self.animate(dur, toss)
+        item.sx, item.sy, item.rot = tx, ty, 0.0
+
+    def onto_tray(self, item):
+        """Gentleman: moves the icon from its claws onto a silver tray."""
+        item.perch, item.dy = "tray", 92 - TRAY_ITEM_Y
+        self.say(self.line("tray"), 1.4)
+
+        def lift(u):
+            item.dy = (92 - TRAY_ITEM_Y) * (1 - ease_io(u))
+        yield from self.animate(0.45, lift)
+        item.dy = 0.0
+
+    def polish(self, item):
+        """Gentleman: gives the icon a little shine before setting it down."""
+        s = self.scale
+        self.say(self.line("polish"), 1.2)
+        el, nxt = 0.0, 0.0
+        while el < 0.9:
+            dt = (yield)
+            el += dt
+            self.arm_target = 0.55 + 0.4 * math.sin(el * 22)
+            nxt -= dt
+            if nxt <= 0:
+                nxt = 0.15
+                px, py = self.local_to_screen(random.uniform(-22, 22),
+                                              self.item_y() + random.uniform(-20, 14))
+                self.particles.append(Particle(px, py, random.uniform(-15, 15), -22, 0.6,
+                                               random.uniform(8, 12) * s, (1.0, 0.95, 0.65),
+                                               "star"))
+        self.arm_target = 0.8
+
+    def sweat(self):
+        for side in (-1, 1):
+            if random.random() < 0.35:
+                continue
+            px, py = self.local_to_screen(side * random.uniform(30, 40), random.uniform(-26, -8))
+            self.particles.append(Particle(px, py, side * random.uniform(30, 60), -40, 0.75,
+                                           5.0 * self.scale, (0.55, 0.82, 1.0), "sweat", g=380))
+
+    def rest_stop(self):
+        """Lazy: stops halfway to catch its breath, drooping and sweating."""
+        s = self.scale
+        self.say(self.line("rest"), 1.5)
+        el, nxt = 0.0, 0.0
+        while el < 1.3:
+            dt = (yield)
+            el += dt
+            k = math.sin(math.pi * min(1.0, el / 1.3))
+            self.hop = 10 * s * k                     # sinks under the weight
+            self.tilt_extra = 0.14 * k
+            nxt -= dt
+            if nxt <= 0:
+                nxt = 0.22
+                self.sweat()
+        self.hop, self.tilt_extra = 0.0, 0.0
+
+    def slip_tumble(self):
+        """Funny: slips in mid-air, tumbles, somehow keeps the hat on."""
+        s = self.scale
+        self.say(self.line("slip"), 1.3)
+        self.eye_wide = 1.0
+
+        def tumble(u):
+            self.spin = 2 * math.pi * ease_io(u)
+            self.hop = math.sin(math.pi * u) * 34 * s
+        yield from self.animate(0.85, tumble)
+        self.spin, self.hop = 0.0, 0.0
+        self.squash = 0.7
+        self.mood = "happy"
+        yield from self.wait(0.3)
+        self.mood = "normal"
+
+    def free_cells(self, grid, path, slots, fixed):
+        taken = self.live_cells(grid, exclude=path) | set(fixed) | set(slots)
+        return [(c, r) for c in range(grid.cols) for r in range(grid.rows)
+                if (c, r) not in taken]
+
+    def floor_cell(self, grid, path, slots, fixed):
+        """Lazy: the free spot right under the robot, where a dropped icon lands."""
+        free = self.free_cells(grid, path, slots, fixed)
+        if not free:
+            return None
+        xd, yd = self.x / self.cs, (self.y + 92 * self.scale) / self.cs
+        col, row = grid.cell_at(xd - grid.cw / 2, yd - grid.ch * 0.36)
+        below = [c for c in free if c[0] == col and c[1] >= row]
+        if below:
+            return min(below, key=lambda c: c[1])
+        return min(free, key=lambda c: (c[0] - col) ** 2 + (c[1] - row) ** 2)
+
+    def wrong_cell(self, grid, path, slots, fixed):
+        """Funny: a believable but wrong spot near the robot, for the prank."""
+        free = self.free_cells(grid, path, slots, fixed)
+        slot_cols = {c[0] for c in slots}
+        if slot_cols:
+            edge = min(slot_cols) if self.cfg["side"] == "right" else max(slot_cols)
+            free = [c for c in free if abs(c[0] - edge) >= 2]
+        if not free:
+            return None
+        xd, yd = self.x / self.cs, (self.y + 92 * self.scale) / self.cs
+        col, row = grid.cell_at(xd - grid.cw / 2, yd - grid.ch * 0.36)
+        free.sort(key=lambda c: (c[0] - col) ** 2 + (c[1] - row) ** 2)
+        return random.choice(free[:3])
+
+    def do_gag(self, gag, item, grid, path, slots, fixed):
+        """Halfway moment. Returns a cell if the icon ended up put down there."""
+        s = self.scale
+        if gag == "loop":
+            yield from self.loop_de_loop()
+        elif gag == "slip":
+            yield from self.slip_tumble()
+        elif gag == "rest":
+            yield from self.rest_stop()
+        elif gag == "slip_drop":
+            yield from self.rest_stop()
+            c = self.floor_cell(grid, path, slots, fixed)
+            if c is not None:
+                tx, ty = self.ov(*grid.icon_center(c))
+                sx0, sy0 = self.local_to_screen(0, self.item_y())
+                item.free, item.sx, item.sy = True, sx0, sy0
+                self.claw_target, self.eye_wide = 1.0, 1.0
+                self.look_target = [0.0, 1.0]
+
+                def fall(u):                  # it slips out and drops like a stone
+                    item.sx = lerp(sx0, tx, u)
+                    item.sy = lerp(sy0, ty, u * u)
+                    item.rot = 0.9 * u
+                yield from self.animate(clamp(abs(ty - sy0) / 900, 0.3, 0.6), fall)
+
+                def bounce(u):
+                    item.sy = ty - math.sin(math.pi * u) * 16 * s
+                    item.rot = 0.9 * (1 - u)
+                yield from self.animate(0.26, bounce)
+                item.sx, item.sy, item.rot = tx, ty, 0.0
+                self.burst(tx, ty + 20 * s, [(0.8, 0.8, 0.8), (1, 1, 1)], 9, 100)
+                return c
+        elif gag == "prank":
+            c = self.wrong_cell(grid, path, slots, fixed)
+            if c is not None:
+                tx, ty = self.ov(*grid.icon_center(c))
+                hx, hy, beside = self.hover_for(tx, ty)
+                yield from self.fly_to(hx, hy - 30)
+                self.say(self.line("prank"), 1.6)
+                yield from self.toss_to(item, tx, ty, 60 * s, 0.5)
+                self.burst(tx, ty, CONFETTI, 12, 160)
+                return c
+        return None
+
+    def after_drop(self, gag):
+        """Reacting to the icon it just put down in the wrong place."""
+        self.arm_target = self.claw_target = 0.0
+        if gag == "slip_drop":
+            self.say(self.line("oops"), 1.4)
+            yield from self.wait(1.1)
+            self.say(self.line("sigh"), 1.6)
+            self.squash = 0.8
+            yield from self.wait(0.8)
+        else:                                       # prank reveal
+            yield from self.wait(1.0)
+            self.mood = "happy"
+            self.say(self.line("kidding"), 1.8)
+
+            def laugh(u):
+                self.tilt_extra = math.sin(u * math.pi * 6) * 0.22
+                self.hop = -abs(math.sin(u * math.pi * 4)) * 10 * self.scale
+            yield from self.animate(1.0, laugh)
+            self.tilt_extra, self.hop = 0.0, 0.0
+            self.mood = "normal"
+
+    def victory_lap(self):
+        """Hyper: way too excited to stop - zooms around the desktop."""
+        s = self.scale
+        ax, ay, aw, ah = self.area
+        self.say(self.line("lap"), 1.6)
+        for _ in range(4):
+            tx = random.uniform(ax + 140 * s, ax + aw - 140 * s)
+            ty = random.uniform(self.top_limit() + 40, ay + ah - 180 * s)
+            yield from self.fly_to(tx, ty, speed=700, _inner=True)
+
     def throw_item(self, item, tx, ty):
         """Aggressive delivery: wind up, then hurl the icon across the screen
         on a spinning arc straight into its spot."""
@@ -1442,7 +1693,7 @@ class Bot:
             self.tilt_extra = -dirx * 0.45 * ease_io(u)
             self.squash = 1 - 0.18 * u
         yield from self.animate(0.3, wind)
-        sx0, sy0 = self.local_to_screen(0, 92)
+        sx0, sy0 = self.local_to_screen(0, self.item_y())
         item.free, item.sx, item.sy = True, sx0, sy0
         self.claw_target = 1.0
         self.say(self.line("toss"), 1.2)
@@ -1462,23 +1713,27 @@ class Bot:
         self.squash = 0.75
 
     def juggle(self, item):
-        """Funny: tosses the icon over its head and catches it again."""
+        """Funny: flips the icon up in the air and catches it on its head."""
         s = self.scale
-        self.say(self.line("juggle"), 1.3)
+        self.say(self.line("juggle"), 1.4)
         cx, cy = self.local_to_screen(0, 92)
         item.free, item.sx, item.sy = True, cx, cy
-        rise = max(40 * s, min(190 * s, cy - (self.area[1] + 30)))
         self.look_target = [0.0, -1.0]
 
         def up(u):
+            e = ease_io(u)
             px, py = self.local_to_screen(0, 92)
-            item.sx = px + math.sin(2 * math.pi * u) * 22 * s
-            item.sy = py - math.sin(math.pi * u) * rise
+            hx, hy = self.local_to_screen(0, HEAD_ITEM_Y)
+            rise = max(10.0, min(110 * s, hy - (self.area[1] + 12)))
+            item.sx = lerp(px, hx, e) + math.sin(2 * math.pi * u) * 18 * s
+            item.sy = lerp(py, hy, e) - math.sin(math.pi * u) * rise
             item.rot = 4 * math.pi * u
             self.look_target = [0.0, -math.sin(math.pi * u)]
-        yield from self.animate(0.75, up)
-        item.free, item.rot = False, 0.0
-        self.squash = 0.8
+        yield from self.animate(0.8, up)
+        item.free, item.rot, item.perch, item.dy = False, 0.0, "head", 0.0
+        self.squash = 0.75
+        self.claw_target = 0.0
+        self.arm_target = 0.0
         self.look_target = [0.0, 0.0]
 
     def loop_de_loop(self):
@@ -1500,7 +1755,7 @@ class Bot:
     def lazy_drop(self, item, tx, ty):
         """Lazy: just lets go from up high and watches it fall."""
         s = self.scale
-        sx0, sy0 = self.local_to_screen(0, 92)
+        sx0, sy0 = self.local_to_screen(0, self.item_y())
         item.free, item.sx, item.sy = True, sx0, sy0
         self.claw_target = 1.0
         self.look_target = [0.0, 1.0]
@@ -1641,8 +1896,40 @@ class Bot:
         yield from self.fly_to(self.x, max(self.top_limit(), self.y - 55), speed=260)
 
         style = self.pers["deliver"]
-        if style == "loop":
+        lifted = held is not None
+        final = path
+
+        def place_real(c):
+            """The real icon appears at cell c, wherever the carried one landed."""
+            nonlocal held, final
+            try:
+                tl = grid.topleft(c)
+                if held and is_home:
+                    set_pos(HOME, *tl)
+                    self.desk.show_home()
+                elif held:
+                    set_pos(held, *tl)
+                    final = release(held, path)
+                    set_pos(final, *tl)
+                self.desk.ours[final] = time.time()
+            except Exception as e:
+                print(f"TidyBot: could not put back {held}: {e}", file=sys.stderr)
+            held = None
+
+        if style == "loop":          # funny: flips it up onto its head like a hat
             yield from self.juggle(item)
+        elif style == "bow":         # gentleman: serves it on a silver tray
+            yield from self.onto_tray(item)
+
+        # what happens halfway there
+        gag = None
+        if style == "loop":
+            gag = random.choice(["slip", "loop"] + ([] if path in self.gagged
+                                                    else ["prank", "prank", "prank"]))
+        elif style == "drop":
+            gag = "slip_drop" if (path not in self.gagged and random.random() < 0.65) else "rest"
+        if gag in ("prank", "slip_drop"):
+            self.gagged.add(path)
 
         # --- carry it over; if someone drops an icon on our spot, pick another
         box = [cell]
@@ -1669,7 +1956,7 @@ class Bot:
             yield from self.throw_item(item, tx, ty)
             hx, hy, beside, landed = self.x, self.y + 60, False, True
         else:
-            looped = style != "loop"
+            mid_done = gag is None
             while True:
                 cell = box[0]
                 tx, ty = self.ov(*grid.icon_center(cell))
@@ -1682,14 +1969,23 @@ class Bot:
                 if style == "drop" and not beside:
                     hy = max(self.top_limit(), hy - 75 * s)   # lazy: drop it from up here
                 r = None
-                if not beside:
-                    if not looped:      # funny: loop-de-loop halfway there
-                        r = yield from self.fly_to((self.x + hx) / 2, (self.y + hy) / 2 - 45,
-                                                   check=spot_taken)
+                if not beside or not mid_done:
+                    if not mid_done:    # halfway: this personality's moment
+                        my = (self.y + hy) / 2 + (25 * s if style == "drop" else -45)
+                        r = yield from self.fly_to((self.x + hx) / 2, my, check=spot_taken)
                         if r is None:
-                            yield from self.loop_de_loop()
-                            looped = True
-                    if r is None:
+                            mid_done = True
+                            dropped_at = yield from self.do_gag(gag, item, grid, path,
+                                                                slots, fixed)
+                            if dropped_at is not None:
+                                # the icon really landed somewhere else: show it there,
+                                # react, then come back for it
+                                place_real(dropped_at)
+                                self.item = None
+                                tgt.leave_t = self.t
+                                yield from self.after_drop(gag)
+                                return "again"
+                    if r is None and not beside:
                         r = yield from self.fly_to(hx, hy - 45, check=spot_taken)
                 if r is None:
                     r = yield from self.fly_to(hx, hy, speed=None if beside else 160,
@@ -1701,40 +1997,28 @@ class Bot:
                 self.say(self.line("taken"), 1.2)
             self.claw_target, self.arm_target = 1.0, 0.8
 
-            if beside:   # toss it into the spot with a little arc
-                sx0, sy0 = self.local_to_screen(0, 92)
-                item.free, item.sx, item.sy = True, sx0, sy0
-                self.claw_target = 1.0
-
-                def toss(u):
-                    e = ease_io(u)
-                    item.sx = lerp(sx0, tx, e)
-                    item.sy = lerp(sy0, ty, e) - math.sin(math.pi * u) * 55 * s
-                    item.rot = 0.5 * math.sin(math.pi * u)
+            if beside or item.perch == "head":   # toss it into the spot with an arc
                 self.say(self.line("toss"), 1.0)
-                yield from self.animate(0.45, toss)
+                yield from self.toss_to(item, tx, ty, 70 * s if item.perch == "head" else 55 * s,
+                                        0.55 if item.perch == "head" else 0.45)
+                landed = True
             elif style == "drop":
                 yield from self.lazy_drop(item, tx, ty)
                 landed = True
             elif style == "bow":
-                def place(u):                       # bows while setting it down
-                    self.tilt_extra = 0.38 * math.sin(math.pi * u)
-                    item.dy = 10 * math.sin(math.pi * u)
-                yield from self.animate(0.6, place)
-                self.tilt_extra = 0.0
+                yield from self.polish(item)
+                start = item.dy
 
-        final = path
-        try:
-            if held and is_home:
-                set_pos(HOME, *grid.topleft(cell))
-                self.desk.show_home()                   # Home reappears in its new spot
-            elif held:
-                set_pos(held, *grid.topleft(cell))
-                final = release(held, path)             # icon appears in its new spot
-                set_pos(final, *grid.topleft(cell))
-            self.desk.ours[final] = time.time()
-        except Exception as e:
-            print(f"TidyBot: could not put back {held}: {e}", file=sys.stderr)
+                def place(u):                       # bows while lowering it off the tray
+                    self.tilt_extra = 0.38 * math.sin(math.pi * u)
+                    item.dy = lerp(start, 92 - TRAY_ITEM_Y, ease_io(u))
+                yield from self.animate(0.7, place)
+                self.tilt_extra = 0.0
+                sx0, sy0 = self.local_to_screen(0, self.item_y())
+                item.free, item.sx, item.sy, item.dy = True, sx0, sy0, 0.0
+                landed = True
+
+        place_real(cell)
 
         if landed:
             def fade(u):
@@ -1752,20 +2036,26 @@ class Bot:
             self.burst(tx, ty, [ACCENT, ACCENT2, (1, 1, 1)], 24, 280)
         else:
             self.burst(tx, ty, [ACCENT2, (1, 1, 1), EYE], 14)
-        placed = self.pers["lines"].get("placed")
-        if placed:
-            self.say(random.choice(placed), 1.2)
-
         self.mood = "happy"
         self.arm_target = self.claw_target = 0.0
         if style == "throw":
             self.steam(3)
             yield from self.wait(0.35)
+        elif style == "bow":
+            # steps back to admire its work, with a little twinkle
+            yield from self.fly_to(hx + (-50 if hx > self.area[0] + self.area[2] / 2 else 50) * s,
+                                   max(self.top_limit(), hy - 40), speed=150)
+            self.look_toward((tx, ty))
+            for k in range(3):
+                self.particles.append(Particle(tx + (-16 + 16 * k) * s, ty - (22 - 10 * (k % 2)) * s,
+                                               0, -10, 0.8 + 0.2 * k, 11 * s, (1.0, 0.95, 0.6), "star"))
+            self.say(self.line("admire"), 1.3)
+            yield from self.wait(0.7)
         else:
             yield from self.fly_to(hx, max(self.top_limit(), hy - 60), speed=260)
         tgt.leave_t = self.t
 
-        if held and get_pos(Gio.File.new_for_path(final)) is None:
+        if lifted and get_pos(Gio.File.new_for_path(final)) is None:
             self.fails += 1
             if self.fails >= 2:
                 self.stuck = True
@@ -2086,7 +2376,20 @@ class Bot:
         self.claw += (self.claw_target - self.claw) * k(14)
         for i in (0, 1):
             self.look[i] += (self.look_target[i] - self.look[i]) * k(6)
-        self.tilt += (clamp(self.vx * 0.0009, -0.35, 0.35) - self.tilt) * k(6)
+        level = self.item is not None and self.item.perch == "tray"   # never spill the tray
+        want_tilt = 0.0 if level else clamp(self.vx * 0.0009, -0.35, 0.35)
+        self.tilt += (want_tilt - self.tilt) * k(6)
+        if self.pers["face"] == "hyper":
+            self.ghosts = [(gx, gy, gt, gs, age + dt) for gx, gy, gt, gs, age in self.ghosts
+                           if age + dt < 0.22]
+            if math.hypot(self.vx, self.vy) > 380 and self.mood != "sleep":
+                self.ghost_acc += dt
+                if self.ghost_acc > 0.035:
+                    self.ghost_acc = 0.0
+                    self.ghosts.insert(0, (self.x, self.y + self.bob, self.tilt, self.spin, 0.0))
+                    del self.ghosts[5:]
+        elif self.ghosts:
+            self.ghosts = []
         self.eye_wide *= math.exp(-dt * 1.6)
         speed = math.hypot(self.vx, self.vy)
         tgt = 0.08 if self.mood == "sleep" else 0.3 + 0.7 * min(1.0, speed / 500)
@@ -2181,6 +2484,8 @@ class Bot:
             out.append((t.x - 40, t.y - 40, t.w + 80, t.h + 80))
         if self.item and self.item.free:
             out.append((self.item.sx - 80 * s, self.item.sy - 70 * s, 160 * s, 150 * s))
+        for gx, gy, _, _, _ in self.ghosts:
+            out.append((gx - 150 * s, gy - 170 * s, 300 * s, 340 * s))
         if self.particles:
             xs = [p.x for p in self.particles]
             ys = [p.y for p in self.particles]
@@ -2201,6 +2506,18 @@ class Bot:
             cr.scale(self.scale * it.scale, self.scale * it.scale)
             draw_item(cr, it)
             cr.restore()
+        if self.ghosts:                       # hyper: afterimages trailing behind
+            real = (self.x, self.y, self.tilt, self.spin, self.mood)
+            for i, (gx, gy, gt, gs, age) in enumerate(self.ghosts):
+                a = 0.32 * (1 - age / 0.22)
+                if a <= 0.02:
+                    continue
+                self.x, self.y, self.tilt, self.spin = gx, gy, gt, gs
+                cr.push_group()
+                self.paint_robot(cr, ghost=True)
+                cr.pop_group_to_source()
+                cr.paint_with_alpha(a)
+            self.x, self.y, self.tilt, self.spin, self.mood = real
         self.paint_robot(cr)
         if self.mood == "dizzy":
             s = self.scale
@@ -2231,20 +2548,20 @@ class Bot:
         cr.stroke()
         cr.restore()
 
-    def paint_robot(self, cr):
+    def paint_robot(self, cr, ghost=False):
         sk = self.skin
         s, t = self.scale, self.t
         x, y = self.x, self.y + self.bob + self.hop
-        if self.pers["face"] == "hyper" and self.mood != "sleep":
+        if self.pers["face"] == "hyper" and self.mood != "sleep" and not ghost:
             x += random.uniform(-1.3, 1.3)
             y += random.uniform(-1.3, 1.3)
-        cr.save()
-        cr.translate(x, self.y + self.bob + 128 * s)
-        cr.scale(1, 0.28)
-        glow(cr, 0, 0, 48 * s * (1 - self.bob / 40 + self.hop / 120), (0.05, 0.08, 0.15), 0.2)
-        cr.restore()
-
-        self.paint_alert(cr, x, y)
+        if not ghost:
+            cr.save()
+            cr.translate(x, self.y + self.bob + 128 * s)
+            cr.scale(1, 0.28)
+            glow(cr, 0, 0, 48 * s * (1 - self.bob / 40 + self.hop / 120), (0.05, 0.08, 0.15), 0.2)
+            cr.restore()
+            self.paint_alert(cr, x, y)
 
         cr.save()
         cr.translate(x, y)
@@ -2254,8 +2571,8 @@ class Bot:
         cr.set_line_join(cairo.LINE_JOIN_ROUND)
 
         self.draw_drive(cr, sk, t, back=True)
-        if self.item and not self.item.free:
-            it = self.item
+        it = self.item if (self.item and not self.item.free) else None
+        if it and it.perch == "claws":
             cr.save()
             cr.translate(0, 92 + it.dy)
             cr.rotate(math.sin(t * 3.1) * 0.08 - self.tilt * 0.6 + it.rot)
@@ -2264,10 +2581,48 @@ class Bot:
             cr.restore()
         self.draw_torso(cr, sk, t)
         self.draw_drive(cr, sk, t, back=False)
+        if it and it.perch == "tray":
+            self.draw_tray(cr, it)
         self.draw_arms(cr, t)
         self.draw_sides(cr, sk, t)
         self.draw_head(cr, sk, t)
+        if it and it.perch == "head":            # balanced on top, wobbling
+            cr.save()
+            cr.translate(math.sin(t * 4.3) * 3, HEAD_ITEM_Y + it.dy)
+            cr.rotate(math.sin(t * 4.3) * 0.16 - self.tilt * 1.2 + it.rot)
+            cr.scale(max(0.01, it.scale), max(0.01, it.scale))
+            draw_item(cr, it)
+            cr.restore()
         cr.restore()
+
+    def draw_tray(self, cr, it):
+        """Gentleman's silver serving tray, with the icon standing on it."""
+        cr.save()
+        cr.translate(0, TRAY_ITEM_Y + it.dy)
+        cr.scale(max(0.01, it.scale), max(0.01, it.scale))
+        label, it.label = it.label, None          # served without a name tag
+        draw_item(cr, it)
+        it.label = label
+        cr.restore()
+        cr.save()
+        cr.translate(0, TRAY_PLATE_Y)
+        cr.scale(1, 0.2)
+        cr.arc(0, 0, 38, 0, 2 * math.pi)
+        cr.restore()
+        g = cairo.LinearGradient(-38, 0, 38, 0)
+        g.add_color_stop_rgb(0, 0.62, 0.65, 0.70)
+        g.add_color_stop_rgb(0.45, 0.97, 0.98, 1.0)
+        g.add_color_stop_rgb(1, 0.58, 0.61, 0.67)
+        cr.set_source(g)
+        cr.fill_preserve()
+        cr.set_source_rgba(0.3, 0.32, 0.38, 0.8)
+        cr.set_line_width(1.2)
+        cr.stroke()
+        cr.move_to(-26, TRAY_PLATE_Y - 3)
+        cr.line_to(8, TRAY_PLATE_Y - 4)
+        cr.set_source_rgba(1, 1, 1, 0.8)
+        cr.set_line_width(1.4)
+        cr.stroke()
 
     # ----- robot parts
     def flame(self, cr, ox, oy, th, k):
@@ -2424,12 +2779,16 @@ class Bot:
             cr.fill()
 
     def draw_arms(self, cr, t):
+        tray = self.item is not None and not self.item.free and self.item.perch == "tray"
         for side in (-1, 1):
             a = self.arm
             sx, sy = side * 19, 33
             ex, ey = side * 31, lerp(42, 54, a)
             hx = lerp(side * 27, side * 22, a)
             hy = lerp(55, 66, a) + math.sin(t * 2.2 + side) * 2 * (1 - a)
+            if tray:                              # reaching down to hold the tray rim
+                ex, ey = side * 36, 68
+                hx, hy = side * 37, TRAY_PLATE_Y - 3
             dangle = clamp(-self.vx * 0.012, -9, 9) * (1 - 0.5 * a)
             hx += dangle
             hy -= abs(dangle) * 0.3
@@ -3070,6 +3429,17 @@ class Bot:
                 cr.arc(p.x, p.y, p.size * (1.8 - a), 0, 2 * math.pi)
                 cr.set_source_rgba(*p.rgb, a * 0.42)
                 cr.fill()
+            elif p.kind == "sweat":
+                cr.save()
+                cr.translate(p.x, p.y)
+                r = p.size
+                cr.move_to(0, -r * 2)
+                cr.curve_to(r * 0.6, -r * 0.6, r, 0, 0, r)
+                cr.curve_to(-r, 0, -r * 0.6, -r * 0.6, 0, -r * 2)
+                cr.close_path()
+                cr.set_source_rgba(*p.rgb, a)
+                cr.fill()
+                cr.restore()
             elif p.kind == "note":
                 cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
                 cr.set_font_size(p.size)
