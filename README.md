@@ -19,9 +19,27 @@ It naps in a corner. When an icon ends up out of place, it wakes with a start, f
 - **Also arranges Home,** and anything that's open or in use.
 - **Has a personality.** It peeks with one eye when something moves, wakes with a "!", talks in speech bubbles, celebrates, and yawns before going back to sleep.
 - **Can be dragged and thrown.** It swings from your cursor like a pendulum. Throw it and it tumbles, bounces off the screen edges and gets dizzy.
-- **Comes in 10 skins,** chosen from its right-click menu.
+- **Has 6 personalities:** Normal, Aggressive (throws your files into place), Funny, Lazy, Hyper and Gentleman. Choose one from its right-click menu.
+- **Comes in 10 skins,** also chosen from its right-click menu.
 - **Stays out of the way.** It lives on the desktop layer, so app windows cover it. Clicks anywhere except on the robot go to your desktop as usual.
 - **Is light.** While napping it uses about 2–3% of one CPU core.
+
+## Personalities
+
+![The 6 personalities: awake, startled, carrying, happy and asleep](docs/personalities.png)
+
+A personality changes how the robot behaves: how fast it reacts and flies, how it delivers each icon, what it says and how it naps. It works with every skin.
+
+| Personality | Face | How it tidies |
+|---|---|---|
+| **Normal** | Friendly | Wakes with a "!", carries the icon over and celebrates |
+| **Aggressive** | Angry red brows | Wakes up furious with steam puffs, grabs the icon and **throws** it spinning across the screen into its spot ("GET IN THERE!"), then grumbles |
+| **Funny** | Clown nose, wandering eyes | Wakes with a flip, juggles the icon, does a loop-de-loop on the way, tells silly jokes and dances when done; sings in its sleep |
+| **Lazy** | Heavy, half-closed eyes | Takes a few seconds to react ("Ugh... five more minutes..."), flies slowly, drops the icon from up high ("...close enough.") and flops |
+| **Hyper** | Wide eyes, crackling sparks | Reacts instantly, zips around at double speed, can't keep still, even twitches in its sleep |
+| **Gentleman** | Monocle and mustache | Polite ("Allow me."), carries each icon with care and bows as it places it |
+
+Your choice is saved. Every personality is just as safe with your files: only the animation changes.
 
 ## Skins
 
@@ -64,12 +82,12 @@ If the `tidybot` command isn't found, log out and back in, so `~/.local/bin` is 
 | Do this | What happens |
 |---|---|
 | **Click** the robot | It reacts ("Hehe!", or "Five more minutes..." if it was asleep) |
-| **Right-click** the robot | Menu: Skin, Size, Tidy up now, Take a nap / Wake up, Quit |
+| **Right-click** the robot | Menu: Personality, Skin, Size, Tidy up now, Take a nap / Wake up, Quit |
 | **Drag** the robot | It swings behind your cursor |
 | **Let go gently** | That spot becomes its new napping place |
 | **Throw** the robot | It tumbles, bounces off the edges, and gets dizzy |
 
-The skin and size you choose are saved.
+The personality, skin and size you choose are saved.
 
 ### Commands
 
@@ -93,7 +111,7 @@ The settings file is `~/.config/tidybot/settings.json`. It's created on first ru
 | `"side": "left"` | Line icons up on the left side instead of the right |
 | `"ignore": ["name"]` | Icons the robot never touches |
 | `"settle_seconds"` | How long icons must stay still before it wakes up (default 0.6) |
-| `"skin"`, `"scale"` | Set from the right-click menu |
+| `"personality"`, `"skin"`, `"scale"` | Set from the right-click menu |
 | `"coord_scale"` | Change this only if the robot aims at the wrong spots on a scaled display |
 
 ## How it works

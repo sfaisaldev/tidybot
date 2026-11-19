@@ -79,6 +79,7 @@ CONFETTI = [EYE, ACCENT, ACCENT2, (0.55, 0.95, 0.55), (0.75, 0.6, 1.0)]
 
 DEFAULT_CONFIG = {
     "skin": "classic",        # see the right-click menu for all 10
+    "personality": "normal",  # normal, aggressive, funny, lazy, hyper, gentleman
     "side": "right",          # "right" or "left": which edge to line icons up on
     "settle_seconds": 0.6,    # wait until icons stop changing this long
     "file_grace": 2.5,        # leave a just-saved file alone this long (folders: 1 s)
@@ -799,6 +800,165 @@ def gear(cr, x, y, r, teeth, rot):
     cr.close_path()
 
 
+# ---------------------------------------------------------- personalities ---
+# A personality changes how the robot behaves, not how it looks: what it says,
+# how fast it reacts and flies, how it delivers an icon, and a few face quirks.
+BASE_LINES = {
+    "hello": ["Hi! I'll keep your icons in line."],
+    "intro": ["Normal mode. Business as usual!"],
+    "wake": ["Huh?! Something's out of place!", "Hey! That's not where it goes!",
+             "A stray icon! On it!"],
+    "grab": ["Got it!", "Gotcha!", "Yoink!", "{name}"],
+    "moved": ["Huh? It moved!", "Hey, come back!", "Wait, where'd it go?"],
+    "fixed_self": ["Oh, you fixed it yourself!"],
+    "taken": ["Spot's taken - next one!"],
+    "toss": ["Catch!", "Swish!", "In you go!"],
+    "more": ["Another one!", "Oh, more?", "And that one too!"],
+    "done": ["All lined up!"],
+    "back_to_sleep": ["*yawn* Back to my nap...", "Wake me if it gets messy.", "Zzz time."],
+    "poke_asleep": ["Huh? I'm awake!", "Five more minutes...", "Mm? All tidy here."],
+    "poke_awake": ["Hey, that tickles!", "Beep boop!", "I'm on duty!", "Hehe!"],
+    "drag": ["Hey! Where are we going?", "Whoa!", "Wheee!", "Put me down!"],
+    "put_down": ["New spot? I like it!", "Thanks for the lift!", "Cozy here."],
+    "thrown": ["Whoaaa!", "Aaaaah!", "Wheeeee!"],
+    "dizzy": ["Whoa... so dizzy...", "Everything's spinning...", "Again! ...no wait."],
+    "clean": ["Everything's already tidy!"],
+}
+
+PERSONALITIES = {
+    "normal": dict(name="Normal", speed=1.0, react=0.0, wake="normal", deliver="carry",
+                   face=None, idle="normal", finale="celebrate", lines={}),
+    "aggressive": dict(
+        name="Aggressive", speed=1.35, react=0.0, wake="angry", deliver="throw",
+        face="angry", idle="grumpy", finale="grumpy", lines={
+            "hello": ["Fine. I'm here. Don't mess anything up."],
+            "intro": ["GRRR. Aggressive mode. Mess with my desktop. I DARE you."],
+            "wake": ["WHO DID THIS?!", "ARE YOU KIDDING ME?!", "Oh, COME ON!"],
+            "grab": ["Gotcha, you little...", "MINE.", "Come here!"],
+            "moved": ["DON'T YOU RUN FROM ME!", "Stop moving it!!",
+                      "Oh, you think that's funny?!"],
+            "fixed_self": ["...Hmph. Fine."],
+            "taken": ["MOVE! ...fine, next spot."],
+            "toss": ["GET IN THERE!", "YEET!", "AND STAY THERE!", "Catch THIS!"],
+            "more": ["ANOTHER ONE?!", "Unbelievable.", "You're doing this on purpose."],
+            "done": ["Hmph. Clean. FOR NOW.", "There. Was that so hard?!"],
+            "back_to_sleep": ["Don't. Touch. Anything.", "I'm watching you.",
+                              "Grr... nap time."],
+            "poke_asleep": ["WHAT?!", "Do NOT poke me.", "Grrr..."],
+            "poke_awake": ["Hands OFF!", "You wanna go?!", "Poke me again. I dare you."],
+            "drag": ["PUT ME DOWN!", "HEY! Unhand me!", "You'll regret this!"],
+            "put_down": ["...Hmph.", "Don't do that again."],
+            "thrown": ["YOU'LL PAY FOR THIS!", "AAARGH!", "NOT COOL!"],
+            "dizzy": ["Ugh... my head...", "I'll... get you... for this..."],
+            "clean": ["It's clean. Leave me alone."],
+        }),
+    "funny": dict(
+        name="Funny", speed=1.0, react=0.2, wake="funny", deliver="loop",
+        face="goofy", idle="snore", finale="dance", lines={
+            "hello": ["Ta-daaa! The tidy clown is here!"],
+            "intro": ["Funny mode! Knock knock! Who's there? A tidy desktop!"],
+            "wake": ["A wild file appeared!", "Uh-oh, spaghetti-o!",
+                     "Plot twist: a messy desktop!"],
+            "grab": ["Boop! Got ya!", "Come here, you!", "This one's coming with me!"],
+            "juggle": ["Look, no hands! ...ok, some hands.", "Juggling skills: activated!",
+                       "Hup! Hup! Hup!"],
+            "loop": ["Weee! Loop-de-loop!", "This is how I roll!",
+                     "Why did the folder cross the desktop? To get to the right side!",
+                     "I'm folder than I look!"],
+            "moved": ["Hey! No fair!", "Is this hide and seek?!", "You're it!"],
+            "taken": ["Musical chairs! Next one!"],
+            "toss": ["Slam dunk!", "Swish! Nothing but desktop!"],
+            "more": ["Encore!", "Round two!", "The fun never stops!"],
+            "done": ["*bows* Thank you, thank you!", "And the crowd goes wild!"],
+            "back_to_sleep": ["Dreaming of tidy desktops...", "Snore-fest begins!",
+                              "Honk... mimimimi..."],
+            "poke_asleep": ["I wasn't sleeping! I was resting my eyes!",
+                            "Huh? Who? What? Pancakes?"],
+            "poke_awake": ["Hehe, that tickles!", "Boop! Right back at you!", "Honk!"],
+            "drag": ["Weee! Airplane!", "Taxi! To the left, please!", "Is this a ride?!"],
+            "put_down": ["Thanks for the ride! Five stars!", "Ooh, nice view from here!"],
+            "thrown": ["I CAN FLYYY!", "Look ma, no jet!", "Wheeeee!"],
+            "dizzy": ["I see stars... and they're pretty!", "Again! Again!"],
+            "clean": ["Spotless! I'm out of a job!"],
+        }),
+    "lazy": dict(
+        name="Lazy", speed=0.55, react=4.0, wake="lazy", deliver="drop",
+        face="lazy", idle="lazy", finale="flop", lines={
+            "hello": ["*yaaawn* ...hi. Wake me if... zzz"],
+            "intro": ["Lazy mode... it's... *yawn*... the best mode."],
+            "pre_wake": ["Ugh... five more minutes...", "Do I have to?", "Nooo... comfy..."],
+            "wake": ["Fine. FINE. I'm up.", "*sigh* ...ok.", "Ugh. Fine."],
+            "grab": ["Ugh, heavy...", "*grunt*", "Why is everything so heavy..."],
+            "moved": ["Seriously? Now I have to fly MORE?", "Oh come on, stay still..."],
+            "fixed_self": ["Oh nice, you did it. Less work for me."],
+            "taken": ["Ugh. Fine. Next spot."],
+            "toss": ["...close enough.", "Oops. Whatever, it's fine.", "*drops it* Done."],
+            "more": ["There's MORE?!", "Ughhh...", "You're killing me here."],
+            "done": ["Done. Never ask me again.", "*collapses*"],
+            "back_to_sleep": ["Zzz...", "Finally... sleep...", "Don't wake me... ever..."],
+            "poke_asleep": ["Mmh... go away...", "Five... more... minutes...", "zzz... no."],
+            "poke_awake": ["Can you not?", "*sigh*", "...what."],
+            "drag": ["Ugh, carry me then.", "Wherever. I don't care.", "Zzz... wait, what?"],
+            "put_down": ["Good spot for a nap.", "...ok. Sleeping here now."],
+            "thrown": ["Whyyyy...", "Too... much... effort..."],
+            "dizzy": ["...I'm just gonna lie here.", "Spinning is exhausting..."],
+            "clean": ["It's clean. Can I go back to sleep now?"],
+        }),
+    "hyper": dict(
+        name="Hyper", speed=1.9, react=-0.4, wake="hyper", deliver="carry",
+        face="hyper", idle="twitchy", finale="celebrate", lines={
+            "hello": ["HI HI HI! I'M HERE! WHAT ARE WE TIDYING?!"],
+            "intro": ["HYPER MODE! I HAD SIX COFFEES! LET'S GOOO!"],
+            "wake": ["OOH OOH A FILE!!", "MESS DETECTED! GO GO GO!", "I GOT THIS I GOT THIS!"],
+            "grab": ["GOT IT GOT IT GOT IT!", "ZOOM!", "YES!!"],
+            "moved": ["FASTER! I LOVE THIS GAME!", "OOH, A CHASE!"],
+            "fixed_self": ["YOU DID IT! HIGH FIVE!"],
+            "taken": ["NEXT SPOT! NEXT SPOT!"],
+            "toss": ["BOOM! DONE! NEXT!"],
+            "more": ["MORE?! YESSS!", "AGAIN AGAIN!", "BRING IT ON!"],
+            "done": ["DONE! RECORD TIME! WHAT ELSE?!", "WOOHOO! WHAT'S NEXT?!"],
+            "back_to_sleep": ["I'm not tired! ...zzz", "Sleep? Sleep is for... zzz"],
+            "poke_asleep": ["I'M UP! I'M UP! WHAT'S HAPPENING?!", "WHO? WHAT? WHERE? LET'S GO!"],
+            "poke_awake": ["HI! HI! HI!", "AGAIN! POKE ME AGAIN!", "BZZZT!"],
+            "drag": ["WHEEE! FASTER!", "WHERE ARE WE GOING?! I LOVE IT!"],
+            "put_down": ["NEW SPOT! AMAZING! I LOVE IT HERE!"],
+            "thrown": ["WHEEEEEEEE!!!", "BEST! DAY! EVER!"],
+            "dizzy": ["Whoa... that was... AWESOME! AGAIN!"],
+            "clean": ["ALREADY CLEAN?! AWW. Mess something up! For me!"],
+        }),
+    "gentleman": dict(
+        name="Gentleman", speed=0.8, react=0.3, wake="gent", deliver="bow",
+        face="gent", idle="normal", finale="bow", lines={
+            "hello": ["Good day. I shall keep your desktop in impeccable order."],
+            "intro": ["Gentleman mode. At your service."],
+            "wake": ["Oh dear, how untidy.", "Good heavens, a stray file!",
+                     "Pardon me, that won't do at all."],
+            "grab": ["Allow me.", "If you'll permit me...", "With pleasure."],
+            "moved": ["Ah, a game of chase. How sporting.", "I beg your pardon?"],
+            "fixed_self": ["Ah, splendid. You've handled it yourself."],
+            "taken": ["Pardon me, I'll use the next spot."],
+            "toss": ["Terribly sorry, I must toss this one."],
+            "placed": ["There you are.", "Exactly where you belong.", "Splendid."],
+            "more": ["Another? Very well.", "Right away."],
+            "done": ["Everything in order. Will that be all?",
+                     "Impeccable, if I may say so."],
+            "back_to_sleep": ["I shall rest, if that's all right.", "Do call if you need me."],
+            "poke_asleep": ["Ah! Do forgive me, I was resting.", "At your service!"],
+            "poke_awake": ["How may I help?", "Steady on, old chap!", "Charmed."],
+            "drag": ["Oh my! Most unexpected!", "Careful with the monocle!"],
+            "put_down": ["A lovely spot. Thank you.", "Most kind."],
+            "thrown": ["GOOD HEAVENS!", "Most undignified!"],
+            "dizzy": ["I say... rather dizzy...", "*adjusts monocle* ...right."],
+            "clean": ["Everything is in perfect order."],
+        }),
+}
+PERSONALITY_ORDER = ["normal", "aggressive", "funny", "lazy", "hyper", "gentleman"]
+
+# where a mustache sits on each face layout
+FACE_MUSTACHE = {"visor": 12, "slit": 9, "screen": 12, "disc": 11, "lens": 17,
+                 "goggles": 14, "none": 15}
+
+
 # -------------------------------------------------------------- particles ---
 class Particle:
     __slots__ = ("x", "y", "vx", "vy", "life", "max", "size", "rgb", "kind", "g")
@@ -835,6 +995,7 @@ class Bot:
         self.cfg, self.desk, self.area = cfg, desk, area
         self.cs = float(cfg.get("coord_scale", 1.0))
         self.skin = apply_skin(cfg.get("skin", "classic"))
+        self.pers = PERSONALITIES.get(cfg.get("personality"), PERSONALITIES["normal"])
         self.puff_acc = 0.0
         self.scale = float(cfg.get("scale", 1.0))
         ax, ay, aw, ah = area
@@ -906,8 +1067,9 @@ class Bot:
         """Fly along a curved path. If `check` is given it is polled every
         0.2 s; when it returns something, the flight stops there and returns
         that value (used to react when the user moves an icon mid-flight)."""
-        speed = speed or self.cfg.get("speed", 520)
+        speed = (speed or self.cfg.get("speed", 520)) * self.pers["speed"]
         ty = max(ty, self.top_limit())               # never aim above the screen
+        wobble = 7 * self.scale if self.pers["face"] == "goofy" else 0.0
         sx, sy = self.x, self.y
         d = math.hypot(tx - sx, ty - sy)
         if d < 2:
@@ -922,7 +1084,12 @@ class Bot:
         while el < dur:
             dt = (yield)
             el += dt
-            nx, ny = bezier((sx, sy), c1, c2, (tx, ty), ease_io(min(1.0, el / dur)))
+            u = min(1.0, el / dur)
+            nx, ny = bezier((sx, sy), c1, c2, (tx, ty), ease_io(u))
+            if wobble:     # silly side-to-side wiggle on the way
+                w = math.sin(el * 11) * wobble * math.sin(math.pi * u)
+                nx += -(ty - sy) / d * w
+                ny += (tx - sx) / d * w
             if dt > 0:
                 self.vx, self.vy = (nx - self.x) / dt, (ny - self.y) / dt
             self.x, self.y = nx, ny
@@ -954,6 +1121,31 @@ class Bot:
     def say(self, text, dur=1.6):
         self.bubble = [text, self.t, self.t + dur]
 
+    def line(self, key, **fmt):
+        """A random line for this moment, in the current personality's voice."""
+        pool = self.pers["lines"].get(key) or BASE_LINES.get(key) or [""]
+        text = random.choice(pool)
+        try:
+            return text.format(**fmt)
+        except (KeyError, IndexError):
+            return text
+
+    def steam(self, n=4):
+        """Angry steam puffs from the top of the head."""
+        for _ in range(n):
+            side = random.choice((-1, 1))
+            px, py = self.local_to_screen(side * random.uniform(14, 30), -34)
+            self.particles.append(Particle(
+                px, py, side * random.uniform(15, 45), random.uniform(-90, -50),
+                random.uniform(0.6, 1.0), random.uniform(4, 7) * self.scale,
+                (0.92, 0.92, 0.96), "puff"))
+
+    def bow(self, dur=0.7, depth=0.42):
+        def f(u):
+            self.tilt_extra = depth * math.sin(math.pi * u)
+        yield from self.animate(dur, f)
+        self.tilt_extra = 0.0
+
     def burst(self, x, y, colors, n=16, speed=170):
         for _ in range(n):
             a = random.uniform(0, 2 * math.pi)
@@ -965,7 +1157,7 @@ class Bot:
 
     # ----- behaviours
     def entrance(self):
-        self.say("Hi! I'll keep your icons in line.", 2.4)
+        self.say(self.line("hello"), 2.4)
         yield from self.fly_to(*self.home, speed=380)
         self.mood = "happy"
         yield from self.wait(1.2)
@@ -980,14 +1172,34 @@ class Bot:
             random.uniform(10, 25), -35, 1.6, random.uniform(11, 16),
             (1, 1, 1), "z"))
 
+    def note(self):
+        self.particles.append(Particle(
+            self.x + 30 * self.scale, self.y - 40 * self.scale,
+            random.uniform(-10, 25), -35, 1.6, random.uniform(13, 17),
+            random.choice([ACCENT, ACCENT2, EYE]), "note"))
+
     def idle(self):
-        """Doze at home until something on the desktop is out of line."""
+        """Doze at home until something on the desktop is out of line.
+        Each personality naps its own way."""
         yield from self.fly_to(*self.home, speed=300)
         self.mood = "sleep"
+        style = self.pers["idle"]
         while True:
-            yield from self.wait(1.2)
+            yield from self.wait(0.8 if style == "lazy" else 1.2)
             if self.t > self.peek_until:
-                self.zzz()
+                if style == "snore" and random.random() < 0.4:
+                    self.note()                      # sings in its sleep
+                else:
+                    self.zzz()
+                    if style == "lazy":
+                        self.particles[-1].size *= 1.5   # big, heavy z's
+            if style == "grumpy" and random.random() < 0.12:
+                self.steam(3)                        # grumbles in its sleep
+            elif style == "twitchy" and random.random() < 0.3:
+                def twitch(u):                       # can't keep still
+                    self.hop = -math.sin(math.pi * u) * 9 * self.scale
+                yield from self.animate(0.22, twitch)
+                self.hop = 0.0
 
     def sleep(self):
         """Paused: same nap, but nothing wakes it."""
@@ -999,6 +1211,10 @@ class Bot:
         self.mood = "normal"
 
     def wake_up(self, look_at):
+        style = self.pers["wake"]
+        if style != "normal":
+            yield from self.wake_styled(style, look_at)
+            return
         """Startled awake: '!' pops, eyes snap wide, a hop and a double-take."""
         self.mood = "normal"
         self.blink_t = 0.0
@@ -1019,15 +1235,126 @@ class Bot:
         yield from self.wait(0.16)
         self.look_target = [clamp(dx / d * 1.4, -1, 1), clamp(dy / d, -1, 1) * 0.6]
         self.eye_wide = 1.0
-        self.say(random.choice(["Huh?! Something's out of place!",
-                                "Hey! That's not where it goes!",
-                                "A stray icon! On it!"]), 1.6)
+        self.say(self.line("wake"), 1.6)
 
         def shake(u):
             self.tilt_extra = math.sin(u * math.pi * 4) * 0.16 * (1 - u)
         yield from self.animate(0.36, shake)
         self.tilt_extra = 0.0
         yield from self.wait(0.15)
+
+    def look_toward(self, look_at):
+        dx, dy = look_at[0] - self.x, look_at[1] - self.y
+        d = max(1.0, math.hypot(dx, dy))
+        self.look_target = [clamp(dx / d * 1.4, -1, 1), clamp(dy / d, -1, 1) * 0.6]
+
+    def wake_styled(self, style, look_at):
+        s = self.scale
+        if style == "lazy":
+            # one eye drags itself open, complains, stretches, gives in
+            self.peek_until = self.t + 2.2
+            self.say(self.line("pre_wake"), 1.9)
+            yield from self.wait(2.0)
+            self.mood = "normal"
+
+            def stretch(u):
+                self.squash = 1 + 0.16 * math.sin(math.pi * u)
+            yield from self.animate(0.9, stretch)
+            self.look_toward(look_at)
+            self.say(self.line("wake"), 1.6)
+            yield from self.wait(0.8)
+            return
+        self.mood = "normal"
+        self.blink_t = 0.0
+        self.alert_t = self.t
+        if style == "angry":
+            self.eye_wide = 0.0
+            self.squash = 0.7
+            self.steam(6)
+            self.look_toward(look_at)
+            self.say(self.line("wake"), 1.6)
+
+            def rage(u):
+                self.tilt_extra = math.sin(u * math.pi * 8) * 0.12 * (1 - u * 0.5)
+            yield from self.animate(0.55, rage)
+            self.tilt_extra = 0.0
+            self.steam(4)
+            yield from self.wait(0.15)
+        elif style == "hyper":
+            self.eye_wide = 1.0
+            for k in range(2):                       # boing! boing!
+                self.squash = 0.6
+                self.burst(self.x, self.y - 30 * s, CONFETTI, 8, 160)
+
+                def hop(u):
+                    self.hop = -math.sin(math.pi * u) * 36 * s
+                yield from self.animate(0.2, hop)
+            self.hop = 0.0
+            for k in range(3):                       # look left-right-left fast
+                self.look_target = [(-1) ** k, 0.0]
+                yield from self.wait(0.07)
+            self.look_toward(look_at)
+            self.say(self.line("wake"), 1.4)
+        elif style == "funny":
+            self.eye_wide = 1.0
+            self.squash = 0.6
+            self.say(self.line("wake"), 1.6)
+
+            def flip(u):
+                self.hop = -math.sin(math.pi * u) * 34 * s
+                self.spin = 2 * math.pi * ease_io(u)
+            yield from self.animate(0.6, flip)
+            self.hop, self.spin = 0.0, 0.0
+            self.squash = 0.7
+            self.look_toward(look_at)
+            yield from self.wait(0.2)
+        elif style == "gent":
+            self.look_toward(look_at)
+
+            def adjust(u):                           # adjusts the monocle
+                self.tilt_extra = -0.12 * math.sin(math.pi * u)
+            yield from self.animate(0.45, adjust)
+            self.tilt_extra = 0.0
+            self.say(self.line("wake"), 1.7)
+            yield from self.wait(0.5)
+
+    def finale(self):
+        """How each personality marks a job well done."""
+        style = self.pers["finale"]
+        self.say(self.line("done"), 1.6)
+        if style == "celebrate":
+            yield from self.celebrate()
+        elif style == "dance":
+            self.mood = "happy"
+            self.burst(self.x, self.y, CONFETTI, 30, 240)
+
+            def dance(u):
+                self.tilt_extra = math.sin(u * math.pi * 6) * 0.3
+                self.hop = -abs(math.sin(u * math.pi * 3)) * 18 * self.scale
+            yield from self.animate(1.2, dance)
+            self.tilt_extra, self.hop = 0.0, 0.0
+            yield from self.wait(0.3)
+            self.mood = "normal"
+        elif style == "grumpy":
+            self.steam(5)
+
+            def dust(u):                             # dusts off its hands
+                self.claw_target = 0.5 + 0.5 * math.sin(u * math.pi * 6)
+                self.arm_target = 0.5 + 0.4 * math.sin(u * math.pi * 6)
+            yield from self.animate(0.8, dust)
+            self.arm_target = self.claw_target = 0.0
+            yield from self.wait(0.4)
+        elif style == "flop":
+            self.squash = 0.7
+
+            def flop(u):
+                self.tilt_extra = 0.5 * ease_io(u)
+            yield from self.animate(0.5, flop)
+            yield from self.wait(0.6)
+            self.tilt_extra = 0.0
+        elif style == "bow":
+            yield from self.bow(0.8, 0.5)
+            yield from self.wait(0.3)
 
     def celebrate(self, small=False):
         self.mood = "happy"
@@ -1065,17 +1392,15 @@ class Bot:
             plan = self.desk.plan()
             if not plan or not plan["todo"]:
                 break
-            self.say(random.choice(["Another one!", "Oh, more?", "And that one too!"]), 1.2)
+            self.say(self.line("more"), 1.2)
         if moved and not (self.paused or self.stuck):
-            self.say("All lined up!", 1.4)
-            yield from self.celebrate()
+            yield from self.finale()
         if not moved:
             # nothing worked: don't wake again until the desktop actually changes
             self.gave_up_snap = self.desk.snapshot()
         yield from self.fly_to(*self.home, speed=380)
         if not self.stuck:
-            self.say(random.choice(["*yawn* Back to my nap...", "Wake me if it gets messy.",
-                                    "Zzz time."]), 1.8)
+            self.say(self.line("back_to_sleep"), 1.8)
             yield from self.wait(0.9)
 
     def top_limit(self):
@@ -1105,6 +1430,95 @@ class Bot:
             if c not in taken:
                 return c
         return None
+
+    def throw_item(self, item, tx, ty):
+        """Aggressive delivery: wind up, then hurl the icon across the screen
+        on a spinning arc straight into its spot."""
+        s = self.scale
+        dirx = 1 if tx >= self.x else -1
+        self.look_toward((tx, ty))
+
+        def wind(u):
+            self.tilt_extra = -dirx * 0.45 * ease_io(u)
+            self.squash = 1 - 0.18 * u
+        yield from self.animate(0.3, wind)
+        sx0, sy0 = self.local_to_screen(0, 92)
+        item.free, item.sx, item.sy = True, sx0, sy0
+        self.claw_target = 1.0
+        self.say(self.line("toss"), 1.2)
+        dist = math.hypot(tx - sx0, ty - sy0)
+        dur = clamp(dist / 1500, 0.4, 0.85)
+        h = max(0.0, min(220 * s, dist * 0.35 + 40, min(sy0, ty) - (self.area[1] + 20)))
+        turns = dirx * (2 + dist / 600) * 2 * math.pi
+
+        def fly(u):
+            item.sx = lerp(sx0, tx, u)
+            item.sy = lerp(sy0, ty, u) - 4 * h * u * (1 - u)
+            item.rot = turns * u
+            self.tilt_extra = dirx * 0.4 * math.sin(math.pi * min(1.0, u * 1.6))
+        yield from self.animate(dur, fly)
+        item.sx, item.sy, item.rot = tx, ty, 0.0
+        self.tilt_extra = 0.0
+        self.squash = 0.75
+
+    def juggle(self, item):
+        """Funny: tosses the icon over its head and catches it again."""
+        s = self.scale
+        self.say(self.line("juggle"), 1.3)
+        cx, cy = self.local_to_screen(0, 92)
+        item.free, item.sx, item.sy = True, cx, cy
+        rise = max(40 * s, min(190 * s, cy - (self.area[1] + 30)))
+        self.look_target = [0.0, -1.0]
+
+        def up(u):
+            px, py = self.local_to_screen(0, 92)
+            item.sx = px + math.sin(2 * math.pi * u) * 22 * s
+            item.sy = py - math.sin(math.pi * u) * rise
+            item.rot = 4 * math.pi * u
+            self.look_target = [0.0, -math.sin(math.pi * u)]
+        yield from self.animate(0.75, up)
+        item.free, item.rot = False, 0.0
+        self.squash = 0.8
+        self.look_target = [0.0, 0.0]
+
+    def loop_de_loop(self):
+        """Funny: a full loop in mid-air, icon and all."""
+        s = self.scale
+        r = 48 * s
+        cx0, cy0 = self.x, self.y
+        up = cy0 - 2 * r >= self.top_limit()
+        self.say(self.line("loop"), 1.8)
+
+        def f(u):
+            a = 2 * math.pi * ease_io(u)
+            self.x = cx0 + math.sin(a) * r
+            self.y = cy0 - (1 - math.cos(a)) * r if up else cy0 + (1 - math.cos(a)) * r
+            self.spin = -a if up else a
+        yield from self.animate(0.9, f)
+        self.spin = 0.0
+
+    def lazy_drop(self, item, tx, ty):
+        """Lazy: just lets go from up high and watches it fall."""
+        s = self.scale
+        sx0, sy0 = self.local_to_screen(0, 92)
+        item.free, item.sx, item.sy = True, sx0, sy0
+        self.claw_target = 1.0
+        self.look_target = [0.0, 1.0]
+
+        def fall(u):
+            item.sx = lerp(sx0, tx, u)
+            item.sy = lerp(sy0, ty, u * u)
+            item.rot = 0.5 * u
+        yield from self.animate(0.5, fall)
+
+        def bounce(u):
+            item.sy = ty - math.sin(math.pi * u) * 14 * s
+            item.rot = 0.5 * (1 - u)
+        yield from self.animate(0.26, bounce)
+        item.sy, item.rot = ty, 0.0
+        self.burst(tx, ty + 20 * s, [(0.8, 0.8, 0.8), (1, 1, 1)], 8, 90)
+        self.say(self.line("toss"), 1.4)
+        self.look_target = [0.0, 0.0]
 
     def carry(self, path, grid, fixed, slots, guess=None):
         """Fetch one icon and put it in the column. Follows the icon if the
@@ -1156,14 +1570,13 @@ class Bot:
                 return "fail"
             if arranged(cur):
                 self.mood = "happy"
-                self.say("Oh, you fixed it yourself!", 1.4)
+                self.say(self.line("fixed_self"), 1.4)
                 yield from self.wait(0.7)
                 self.mood = "normal"
                 return "done"
             self.eye_wide = 1.0
             self.squash = 0.8
-            self.say(random.choice(["Huh? It moved!", "Hey, come back!",
-                                    "Wait, where'd it go?"]), 1.2)
+            self.say(self.line("moved"), 1.2)
         beside = False
         if cur is None:
             ix, iy = self.x, self.y + hang
@@ -1224,8 +1637,12 @@ class Bot:
             def pop(u):
                 item.scale, item.alpha = lerp(0.6, 1.0, ease_out_back(u)), u
             yield from self.animate(0.22, pop)
-        self.say(random.choice(["Got it!", "Gotcha!", "Yoink!", name[:20]]), 1.0)
+        self.say(self.line("grab", name=name[:20]), 1.0)
         yield from self.fly_to(self.x, max(self.top_limit(), self.y - 55), speed=260)
+
+        style = self.pers["deliver"]
+        if style == "loop":
+            yield from self.juggle(item)
 
         # --- carry it over; if someone drops an icon on our spot, pick another
         box = [cell]
@@ -1239,40 +1656,72 @@ class Bot:
             return None
 
         tgt = None
-        while True:
+        landed = False          # True when the icon already flew/fell into place
+        if style == "throw":
+            # aggressive: no carrying - throw it straight into its spot
+            nc = self.pick_slot(grid, path, fixed)
+            if nc is not None:
+                box[0] = nc
             cell = box[0]
             tx, ty = self.ov(*grid.icon_center(cell))
             sx, sy = self.ov(*grid.topleft(cell))
-            if tgt is None or (tgt.x, tgt.y) != (sx, sy):
-                if tgt is not None:
-                    tgt.leave_t = self.t
-                self.target = tgt = Slot(sx, sy, grid.cw * self.cs, grid.ch * self.cs, self.t)
-            hx, hy, beside = self.hover_for(tx, ty)
-            r = None
-            if not beside:
-                r = yield from self.fly_to(hx, hy - 45, check=spot_taken)
-            if r is None:
-                r = yield from self.fly_to(hx, hy, speed=None if beside else 160,
-                                           check=spot_taken)
-            if r is None:
-                r = spot_taken()
-            if r is None:
-                break
-            self.say("Spot's taken - next one!", 1.2)
-        self.claw_target, self.arm_target = 1.0, 0.8
+            self.target = tgt = Slot(sx, sy, grid.cw * self.cs, grid.ch * self.cs, self.t)
+            yield from self.throw_item(item, tx, ty)
+            hx, hy, beside, landed = self.x, self.y + 60, False, True
+        else:
+            looped = style != "loop"
+            while True:
+                cell = box[0]
+                tx, ty = self.ov(*grid.icon_center(cell))
+                sx, sy = self.ov(*grid.topleft(cell))
+                if tgt is None or (tgt.x, tgt.y) != (sx, sy):
+                    if tgt is not None:
+                        tgt.leave_t = self.t
+                    self.target = tgt = Slot(sx, sy, grid.cw * self.cs, grid.ch * self.cs, self.t)
+                hx, hy, beside = self.hover_for(tx, ty)
+                if style == "drop" and not beside:
+                    hy = max(self.top_limit(), hy - 75 * s)   # lazy: drop it from up here
+                r = None
+                if not beside:
+                    if not looped:      # funny: loop-de-loop halfway there
+                        r = yield from self.fly_to((self.x + hx) / 2, (self.y + hy) / 2 - 45,
+                                                   check=spot_taken)
+                        if r is None:
+                            yield from self.loop_de_loop()
+                            looped = True
+                    if r is None:
+                        r = yield from self.fly_to(hx, hy - 45, check=spot_taken)
+                if r is None:
+                    r = yield from self.fly_to(hx, hy, speed=None if beside else 160,
+                                               check=spot_taken)
+                if r is None:
+                    r = spot_taken()
+                if r is None:
+                    break
+                self.say(self.line("taken"), 1.2)
+            self.claw_target, self.arm_target = 1.0, 0.8
 
-        if beside:   # toss it into the spot with a little arc
-            sx0, sy0 = self.local_to_screen(0, 92)
-            item.free, item.sx, item.sy = True, sx0, sy0
-            self.claw_target = 1.0
+            if beside:   # toss it into the spot with a little arc
+                sx0, sy0 = self.local_to_screen(0, 92)
+                item.free, item.sx, item.sy = True, sx0, sy0
+                self.claw_target = 1.0
 
-            def toss(u):
-                e = ease_io(u)
-                item.sx = lerp(sx0, tx, e)
-                item.sy = lerp(sy0, ty, e) - math.sin(math.pi * u) * 55 * s
-                item.rot = 0.5 * math.sin(math.pi * u)
-            self.say(random.choice(["Catch!", "Swish!", "In you go!"]), 1.0)
-            yield from self.animate(0.45, toss)
+                def toss(u):
+                    e = ease_io(u)
+                    item.sx = lerp(sx0, tx, e)
+                    item.sy = lerp(sy0, ty, e) - math.sin(math.pi * u) * 55 * s
+                    item.rot = 0.5 * math.sin(math.pi * u)
+                self.say(self.line("toss"), 1.0)
+                yield from self.animate(0.45, toss)
+            elif style == "drop":
+                yield from self.lazy_drop(item, tx, ty)
+                landed = True
+            elif style == "bow":
+                def place(u):                       # bows while setting it down
+                    self.tilt_extra = 0.38 * math.sin(math.pi * u)
+                    item.dy = 10 * math.sin(math.pi * u)
+                yield from self.animate(0.6, place)
+                self.tilt_extra = 0.0
 
         final = path
         try:
@@ -1287,18 +1736,33 @@ class Bot:
         except Exception as e:
             print(f"TidyBot: could not put back {held}: {e}", file=sys.stderr)
 
-        def drop(u):
-            item.dy = 6 * u
-            item.scale = lerp(1.0, 0.92, u)
-            item.alpha = 1 - u
-        yield from self.animate(0.28, drop)
+        if landed:
+            def fade(u):
+                item.alpha = 1 - u
+            yield from self.animate(0.16, fade)
+        else:
+            def drop(u):
+                item.dy = 6 * u
+                item.scale = lerp(1.0, 0.92, u)
+                item.alpha = 1 - u
+            yield from self.animate(0.28, drop)
         self.item = None
-        tgt.bump = 1.0
-        self.burst(tx, ty, [ACCENT2, (1, 1, 1), EYE], 14)
+        tgt.bump = 1.8 if style == "throw" else 1.0
+        if style == "throw":
+            self.burst(tx, ty, [ACCENT, ACCENT2, (1, 1, 1)], 24, 280)
+        else:
+            self.burst(tx, ty, [ACCENT2, (1, 1, 1), EYE], 14)
+        placed = self.pers["lines"].get("placed")
+        if placed:
+            self.say(random.choice(placed), 1.2)
 
         self.mood = "happy"
         self.arm_target = self.claw_target = 0.0
-        yield from self.fly_to(hx, max(self.top_limit(), hy - 60), speed=260)
+        if style == "throw":
+            self.steam(3)
+            yield from self.wait(0.35)
+        else:
+            yield from self.fly_to(hx, max(self.top_limit(), hy - 60), speed=260)
         tgt.leave_t = self.t
 
         if held and get_pos(Gio.File.new_for_path(final)) is None:
@@ -1340,8 +1804,7 @@ class Bot:
         self.mood = "normal"
         self.eye_wide, self.squash = 1.0, 0.75
         self.arm_target, self.claw_target = 0.3, 0.8
-        self.say(random.choice(["Hey! Where are we going?", "Whoa!", "Wheee!",
-                                "Put me down!"]), 1.4)
+        self.say(self.line("drag"), 1.4)
         self.start(self.held(), "dragged")
         return True
 
@@ -1393,14 +1856,13 @@ class Bot:
         if speed < 260:   # gently put down: it stays there
             self.vx = self.vy = 0.0
             self.mood = "happy"
-            self.say(random.choice(["New spot? I like it!", "Thanks for the lift!",
-                                    "Cozy here."]), 1.6)
+            self.say(self.line("put_down"), 1.6)
             self.home = self.clamp_home(self.x, self.y)
             self.arm_target = self.claw_target = 0.0
             yield from self.wait(1.0)
             self.mood = "normal"
             return
-        self.say(random.choice(["Whoaaa!", "Aaaaah!", "Wheeeee!"]), 1.2)
+        self.say(self.line("thrown"), 1.2)
         spin_v = clamp(vx * 0.012, -16, 16) or 6.0
         left, right = ax + 60 * s, ax + aw - 60 * s
         top, bottom = self.top_limit(), ay + ah - 135 * s
@@ -1441,8 +1903,7 @@ class Bot:
         yield from self.animate(0.45, upright)
         self.spin = 0.0
         self.mood = "dizzy"
-        self.say(random.choice(["Whoa... so dizzy...", "Everything's spinning...",
-                                "Again! ...no wait."]), 1.8)
+        self.say(self.line("dizzy"), 1.8)
         yield from self.wait(1.7)
 
         def shake(u):
@@ -1471,11 +1932,9 @@ class Bot:
         self.eye_wide = 1.0
         self.squash = 0.7
         self.burst(self.x, self.y - 30 * self.scale, [EYE, (1, 1, 1)], 6, 90)
-        if was_asleep:
-            line = random.choice(["Huh? I'm awake!", "Five more minutes...", "Mm? All tidy here."])
-        else:
-            line = random.choice(["Hey, that tickles!", "Beep boop!", "I'm on duty!", "Hehe!"])
-        self.say(line, 1.4)
+        self.say(self.line("poke_asleep" if was_asleep else "poke_awake"), 1.4)
+        if self.pers["face"] == "angry":
+            self.steam(5)
 
         def wiggle(u):
             self.tilt_extra = math.sin(u * math.pi * 3) * 0.2 * (1 - u)
@@ -1484,6 +1943,49 @@ class Bot:
         self.mood = "happy"
         yield from self.wait(0.9)
         self.mood = "normal"
+
+    def set_personality(self, key):
+        self.pers = PERSONALITIES.get(key, PERSONALITIES["normal"])
+        self.cfg["personality"] = key
+        save_settings(personality=key)
+        self.squash = 0.7
+        self.burst(self.x, self.y, CONFETTI, 18, 180)
+        if self.is_resting():
+            self.start(self.intro_show(), "showoff")
+
+    def intro_show(self):
+        """Introduces the new personality with its signature move."""
+        s = self.scale
+        self.mood = "normal"
+        self.eye_wide = 0.6
+        self.say(self.line("intro"), 2.6)
+        style = self.pers["wake"]
+        if style == "angry":
+            self.steam(7)
+
+            def rage(u):
+                self.tilt_extra = math.sin(u * math.pi * 8) * 0.12
+            yield from self.animate(0.6, rage)
+        elif style == "funny":
+            def flip(u):
+                self.hop = -math.sin(math.pi * u) * 34 * s
+                self.spin = 2 * math.pi * ease_io(u)
+            yield from self.animate(0.6, flip)
+        elif style == "lazy":
+            def stretch(u):
+                self.squash = 1 + 0.16 * math.sin(math.pi * u)
+            yield from self.animate(0.9, stretch)
+        elif style == "hyper":
+            for _ in range(3):
+                def hop(u):
+                    self.hop = -math.sin(math.pi * u) * 30 * s
+                yield from self.animate(0.18, hop)
+        elif style == "gent":
+            yield from self.bow(0.8, 0.5)
+        else:
+            yield from self.celebrate(small=True)
+        self.tilt_extra, self.hop, self.spin = 0.0, 0.0, 0.0
+        yield from self.wait(1.2)
 
     def set_skin(self, key):
         self.skin = apply_skin(key)
@@ -1525,7 +2027,7 @@ class Bot:
 
     def all_clean(self):
         self.mood = "happy"
-        self.say("Everything's already tidy!", 1.8)
+        self.say(self.line("clean"), 1.8)
         yield from self.celebrate(small=True)
         yield from self.wait(0.8)
 
@@ -1562,7 +2064,8 @@ class Bot:
                 if self.last_snap is not None:
                     self.peek_until = self.t + 1.8   # something moved: one eye opens
                 self.last_snap, self.snap_since = snap, self.t
-            elif (self.t - self.snap_since >= self.cfg["settle_seconds"]
+            elif (self.t - self.snap_since
+                  >= max(0.2, self.cfg["settle_seconds"] + self.pers["react"])
                   and snap != self.gave_up_snap
                   and (snap != self.planned_snap or self.t >= self.plan_due)):
                 # re-plan when something changed, or the moment a new item's
@@ -1591,7 +2094,12 @@ class Bot:
         self.sq_v += (1 - self.squash) * 220 * dt
         self.sq_v *= math.exp(-dt * 11)
         self.squash += self.sq_v * dt
-        self.bob = math.sin(self.t * 2.4) * (1.5 if self.mood == "sleep" else 4.0)
+        if self.pers["idle"] == "lazy":
+            self.bob = math.sin(self.t * 1.4) * (3.0 if self.mood == "sleep" else 5.0)
+        elif self.pers["idle"] == "twitchy":
+            self.bob = math.sin(self.t * 5.0) * (2.0 if self.mood == "sleep" else 4.0)
+        else:
+            self.bob = math.sin(self.t * 2.4) * (1.5 if self.mood == "sleep" else 4.0)
 
         if self.blink_t > 0:
             self.blink_t -= dt
@@ -1657,7 +2165,7 @@ class Bot:
         quiet = (self.task_name in ("idle", "sleep") and self.mood == "sleep"
                  and self.bubble is None and self.item is None
                  and self.t > self.peek_until
-                 and all(p.kind == "z" for p in self.particles))
+                 and all(p.kind in ("z", "note", "puff") for p in self.particles))
         return 20 if quiet else 60
 
     # ----- regions that need redrawing this frame
@@ -1727,6 +2235,9 @@ class Bot:
         sk = self.skin
         s, t = self.scale, self.t
         x, y = self.x, self.y + self.bob + self.hop
+        if self.pers["face"] == "hyper" and self.mood != "sleep":
+            x += random.uniform(-1.3, 1.3)
+            y += random.uniform(-1.3, 1.3)
         cr.save()
         cr.translate(x, self.y + self.bob + 128 * s)
         cr.scale(1, 0.28)
@@ -2237,6 +2748,24 @@ class Bot:
             for side in (-1, 1):
                 glow(cr, side * cx, cy, 7, CHEEK, 0.35)
         self.draw_eyes(cr, style, centers, sz, t)
+        if self.pers["face"] == "lazy" and self.mood not in ("sleep", "happy", "dizzy"):
+            # lids use the exact shading of the surface under them, so only
+            # the top half of each eye disappears
+            if face == "none":
+                lid = vgrad(-36, 30, BODY_TOP, BODY_BOT)
+            else:
+                lid = vgrad(-21, 17, VISOR_A, VISOR_B)
+            lx, ly = self.look[0] * 5 * sz, self.look[1] * 3 * sz
+            for cx, cy in centers:                   # heavy, half-closed lids
+                ex, ey = cx + lx, cy + ly
+                cr.rectangle(ex - 13 * sz, ey - 22 * sz, 26 * sz, 21 * sz)
+                cr.set_source(lid)
+                cr.fill()
+                cr.move_to(ex - 8 * sz, ey - 1 * sz)
+                cr.line_to(ex + 8 * sz, ey - 1 * sz)
+                cr.set_source_rgba(*EYE, 0.55)
+                cr.set_line_width(1.6)
+                cr.stroke()
         if face in ("visor", "slit", "screen"):
             g = cairo.LinearGradient(0, -20, 0, -6)
             g.add_color_stop_rgba(0, 1, 1, 1, 0.16)
@@ -2250,6 +2779,89 @@ class Bot:
                 cr.set_source_rgba(1, 1, 1, 0.55)
                 cr.fill()
         cr.restore()
+        self.draw_personality_face(cr, face, centers, sz, t)
+
+    def draw_personality_face(self, cr, face, centers, sz, t):
+        fs = self.pers["face"]
+        if fs == "angry" and self.mood not in ("sleep", "dizzy", "happy"):
+            red = (1.0, 0.27, 0.27)
+            cr.save()
+            if len(centers) == 1:
+                cx, cy = centers[0]
+                cr.move_to(cx - 13 * sz, cy - 15 * sz)
+                cr.line_to(cx, cy - 8 * sz)
+                cr.line_to(cx + 13 * sz, cy - 15 * sz)
+            else:
+                for cx, cy in centers:
+                    inward = -1 if cx > 0 else 1
+                    cr.move_to(cx - inward * 8 * sz, cy - 14 * sz)
+                    cr.line_to(cx + inward * 7 * sz, cy - 7.5 * sz)
+            cr.set_line_cap(cairo.LINE_CAP_ROUND)
+            cr.set_source_rgba(*red, 0.35)
+            cr.set_line_width(6.5)
+            cr.stroke_preserve()
+            cr.set_source_rgb(*red)
+            cr.set_line_width(3.2)
+            cr.stroke()
+            cr.restore()
+        elif fs == "goofy":
+            # a squeaky red clown nose
+            y = FACE_MUSTACHE.get(face, 12) - 1
+            glow(cr, 0, y, 11, (1.0, 0.2, 0.2), 0.35)
+            cr.arc(0, y, 6.2, 0, 2 * math.pi)
+            g = cairo.RadialGradient(-2, y - 2, 1, 0, y, 6.5)
+            g.add_color_stop_rgb(0, 1.0, 0.55, 0.5)
+            g.add_color_stop_rgb(1, 0.85, 0.08, 0.12)
+            cr.set_source(g)
+            cr.fill()
+            cr.arc(-2, y - 2.2, 1.6, 0, 2 * math.pi)
+            cr.set_source_rgba(1, 1, 1, 0.85)
+            cr.fill()
+        elif fs == "hyper" and self.mood != "sleep":
+            # crackling energy sparks around the head
+            for i, (bx, by) in enumerate(((-44, -30), (44, -26), (-40, 10), (42, 14))):
+                if math.sin(t * 13 + i * 2.4) < 0.15:
+                    continue
+                k = 1 if bx > 0 else -1
+                cr.move_to(bx, by - 7)
+                cr.line_to(bx - 3 * k, by - 1)
+                cr.line_to(bx + 2 * k, by)
+                cr.line_to(bx - 1 * k, by + 7)
+                cr.set_source_rgba(1.0, 0.86, 0.25, 0.95)
+                cr.set_line_width(2.2)
+                cr.stroke()
+        elif fs == "gent":
+            # monocle on the right eye, with its little chain
+            mx, my = centers[-1]
+            mr = 10 * sz
+            cr.arc(mx, my, mr, 0, 2 * math.pi)
+            cr.set_source_rgba(1, 1, 1, 0.12)
+            cr.fill_preserve()
+            cr.set_source_rgb(1.0, 0.84, 0.35)
+            cr.set_line_width(2.2)
+            cr.stroke()
+            cr.arc(mx - 3 * sz, my - 4 * sz, mr * 0.45, math.radians(200), math.radians(260))
+            cr.set_source_rgba(1, 1, 1, 0.7)
+            cr.set_line_width(1.4)
+            cr.stroke()
+            cr.move_to(mx + mr * 0.7, my + mr * 0.7)
+            cr.curve_to(mx + 16, my + 18, mx + 6, my + 26, mx + 14, my + 34)
+            cr.set_source_rgba(1.0, 0.84, 0.35, 0.85)
+            cr.set_line_width(1.1)
+            cr.stroke()
+            # a distinguished mustache
+            y = FACE_MUSTACHE.get(face, 12)
+            for side in (-1, 1):
+                cr.move_to(0, y - 1.5)
+                cr.curve_to(side * 6, y - 4.5, side * 14, y - 3.5, side * 20, y - 7.5)
+                cr.curve_to(side * 23, y - 9.5, side * 25, y - 4, side * 21, y - 2)
+                cr.curve_to(side * 14, y + 5, side * 6, y + 4, 0, y + 2.5)
+                cr.close_path()
+            cr.set_source_rgb(0.95, 0.92, 0.85)
+            cr.fill_preserve()
+            cr.set_source_rgba(*OUTLINE, 0.55)
+            cr.set_line_width(1)
+            cr.stroke()
 
     def draw_eyes(self, cr, style, centers, sz, t):
         lx, ly = self.look
@@ -2313,11 +2925,23 @@ class Bot:
             cr.fill()
             return
         wide = self.eye_wide
+        fs = self.pers["face"]
         for i, (cx, cy) in enumerate(centers):
+            ex, ey = cx + ox, cy + oy
             h = (1 - self.blink) * (1 + 0.35 * wide)
             if mood == "confused" and i == len(centers) - 1:
                 h *= 0.45
-            self.draw_eye(cr, style, cx + ox, cy + oy, sz, h, 1 + 0.3 * wide)
+            if fs == "angry":
+                h *= 0.72                            # narrowed, glaring
+            elif fs == "goofy":                      # each eye wanders on its own
+                ex += math.sin(t * 2.3 + i * 2.1) * 3 * sz
+                ey += math.cos(t * 1.7 + i * 1.3) * 2 * sz
+            elif fs == "hyper":                      # wired, wide open, twitchy
+                ex += random.uniform(-1.1, 1.1)
+                ey += random.uniform(-1.1, 1.1)
+                h *= 1.3
+                wide = max(wide, 0.6)
+            self.draw_eye(cr, style, ex, ey, sz, h, 1 + 0.3 * wide)
 
     def draw_eye(self, cr, style, cx, cy, sz, hm, wm):
         hm = max(0.12, hm)
@@ -2446,6 +3070,12 @@ class Bot:
                 cr.arc(p.x, p.y, p.size * (1.8 - a), 0, 2 * math.pi)
                 cr.set_source_rgba(*p.rgb, a * 0.42)
                 cr.fill()
+            elif p.kind == "note":
+                cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+                cr.set_font_size(p.size)
+                cr.move_to(p.x, p.y)
+                cr.set_source_rgba(*p.rgb, a)
+                cr.show_text("\u266a")
             elif p.kind == "z":
                 cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
                 cr.set_font_size(p.size)
@@ -2675,6 +3305,8 @@ class Overlay:
             parent.set_submenu(sub)
             menu.append(parent)
 
+        radio_submenu("Personality", [(k, PERSONALITIES[k]["name"]) for k in PERSONALITY_ORDER],
+                      bot.cfg.get("personality", "normal"), bot.set_personality)
         radio_submenu("Skin", [(k, SKINS[k]["name"]) for k in SKIN_ORDER],
                       bot.cfg.get("skin", "classic"), bot.set_skin)
         radio_submenu("Size", [(0.75, "Small"), (1.0, "Normal"), (1.3, "Large"), (1.6, "Huge")],
